@@ -522,6 +522,54 @@ TEST_F(HipFileUnit, TestHipFileBatchIOGetStatusUnexpectedException)
     auto result = hipFileBatchIOGetStatus(b_handle, 1, &nr, &event, nullptr);
     ASSERT_EQ(result, HipFileOpError(hipFileInternalError));
 }
+
+TEST_F(HipFileUnit, TestHipFileBatchIOCancelUnknownHandle)
+{
+    hipFileBatchHandle_t                       b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    std::shared_ptr<StrictMock<MBatchContext>> mock_b_context = std::make_shared<StrictMock<MBatchContext>>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Throw(InvalidBatchHandle()));
+    EXPECT_CALL(*mock_b_context, cancelOperations).Times(0);
+
+    auto result = hipFileBatchIOCancel(b_handle);
+    ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOCancelSuccess)
+{
+    hipFileBatchHandle_t                       b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    std::shared_ptr<StrictMock<MBatchContext>> mock_b_context = std::make_shared<StrictMock<MBatchContext>>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    EXPECT_CALL(*mock_b_context, cancelOperations);
+
+    auto result = hipFileBatchIOCancel(b_handle);
+    ASSERT_EQ(result, HIPFILE_SUCCESS);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOCancelBadArgument)
+{
+    hipFileBatchHandle_t                       b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    std::shared_ptr<StrictMock<MBatchContext>> mock_b_context = std::make_shared<StrictMock<MBatchContext>>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    EXPECT_CALL(*mock_b_context, cancelOperations).WillOnce(Throw(std::invalid_argument("")));
+
+    auto result = hipFileBatchIOCancel(b_handle);
+    ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOCancelUnexpectedException)
+{
+    hipFileBatchHandle_t                       b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    std::shared_ptr<StrictMock<MBatchContext>> mock_b_context = std::make_shared<StrictMock<MBatchContext>>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    EXPECT_CALL(*mock_b_context, cancelOperations).WillOnce(Throw(std::runtime_error("test error")));
+
+    auto result = hipFileBatchIOCancel(b_handle);
+    ASSERT_EQ(result, HipFileOpError(hipFileInternalError));
+}
 #endif
 
 /// @brief Test hipFileIO function
