@@ -97,7 +97,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitSuccess)
     std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
 
     EXPECT_CALL(mock_state, getBatchContext).WillOnce(Return(mock_b_context));
-    EXPECT_CALL(*mock_b_context, submit_operations);
+    EXPECT_CALL(*mock_b_context, submitOperations);
 
     auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
     ASSERT_EQ(result, HIPFILE_SUCCESS);
@@ -110,7 +110,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitBadHandle)
     std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
 
     EXPECT_CALL(mock_state, getBatchContext).WillOnce(Throw(InvalidBatchHandle()));
-    EXPECT_CALL(*mock_b_context, submit_operations).Times(0);
+    EXPECT_CALL(*mock_b_context, submitOperations).Times(0);
 
     auto           result          = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
     hipFileError_t expected_result = {hipFileInvalidValue, hipSuccess};
@@ -124,7 +124,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitBadArgument)
     std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
 
     EXPECT_CALL(mock_state, getBatchContext).WillOnce(Return(mock_b_context));
-    EXPECT_CALL(*mock_b_context, submit_operations).WillOnce(Throw(std::invalid_argument("")));
+    EXPECT_CALL(*mock_b_context, submitOperations).WillOnce(Throw(std::invalid_argument("")));
 
     auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
     ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
@@ -138,7 +138,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitNullptrParams)
     // With nr > 0 and a nullptr iocbp, the API must reject the call before
     // ever reaching the batch context (avoids dereferencing the nullptr).
     EXPECT_CALL(mock_state, getBatchContext).Times(0);
-    EXPECT_CALL(*mock_b_context, submit_operations).Times(0);
+    EXPECT_CALL(*mock_b_context, submitOperations).Times(0);
 
     auto           result          = hipFileBatchIOSubmit(b_handle, 1, nullptr, 0);
     hipFileError_t expected_result = {hipFileInvalidValue, hipSuccess};
