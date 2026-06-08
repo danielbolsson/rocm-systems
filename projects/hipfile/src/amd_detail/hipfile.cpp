@@ -486,6 +486,7 @@ hipFileBatchIOGetStatus(hipFileBatchHandle_t batch_idp, unsigned min_nr, unsigne
                         hipFileIOEvents_t *iocbp, struct timespec *timeout)
 try {
     hipFileInit();
+#ifndef HIPFILE_ENABLE_BATCH
     (void)batch_idp;
     (void)min_nr;
     (void)nr;
@@ -493,6 +494,25 @@ try {
     (void)timeout;
 
     throw std::runtime_error("Not Implemented");
+#else
+    if (iocbp == nullptr) {
+        return {hipFileInvalidValue, hipSuccess};
+    }
+    if (nr == nullptr || *nr == 0) {
+        return {hipFileInvalidValue, hipSuccess};
+    }
+    if (min_nr > *nr) {
+        return {hipFileInvalidValue, hipSuccess};
+    }
+
+    std::shared_ptr<IBatchContext> batch_context = Context<DriverState>::get()->getBatchContext(batch_idp);
+    batch_context->getStatus(min_nr, nr, iocbp, makeBatchDeadline(timeout));
+
+    return {hipFileSuccess, hipSuccess};
+#endif
+}
+catch (const std::invalid_argument &) {
+    return {hipFileInvalidValue, hipSuccess};
 }
 catch (...) {
     return handle_exception();
