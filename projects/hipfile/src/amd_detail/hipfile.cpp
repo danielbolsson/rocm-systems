@@ -544,9 +544,13 @@ void
 hipFileBatchIODestroy(hipFileBatchHandle_t batch_idp)
 try {
     hipFileInit();
+#ifndef HIPFILE_ENABLE_BATCH
     (void)batch_idp;
 
     throw std::runtime_error("Not Implemented");
+#else
+    Context<DriverState>::get()->destroyBatchContext(batch_idp);
+#endif
 }
 catch (...) {
     return;

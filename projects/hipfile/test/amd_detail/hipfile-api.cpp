@@ -570,6 +570,42 @@ TEST_F(HipFileUnit, TestHipFileBatchIOCancelUnexpectedException)
     auto result = hipFileBatchIOCancel(b_handle);
     ASSERT_EQ(result, HipFileOpError(hipFileInternalError));
 }
+
+TEST_F(HipFileUnit, TestHipFileBatchIODestroySuccess)
+{
+    hipFileBatchHandle_t b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+
+    EXPECT_CALL(mock_state, destroyBatchContext(b_handle));
+
+    ASSERT_NO_THROW(hipFileBatchIODestroy(b_handle));
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIODestroyUnknownHandle)
+{
+    hipFileBatchHandle_t b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+
+    EXPECT_CALL(mock_state, destroyBatchContext(b_handle)).WillOnce(Throw(InvalidBatchHandle()));
+
+    ASSERT_NO_THROW(hipFileBatchIODestroy(b_handle));
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIODestroyBadArgument)
+{
+    hipFileBatchHandle_t b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+
+    EXPECT_CALL(mock_state, destroyBatchContext(b_handle)).WillOnce(Throw(std::invalid_argument("")));
+
+    ASSERT_NO_THROW(hipFileBatchIODestroy(b_handle));
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIODestroyUnexpectedException)
+{
+    hipFileBatchHandle_t b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+
+    EXPECT_CALL(mock_state, destroyBatchContext(b_handle)).WillOnce(Throw(std::runtime_error("test error")));
+
+    ASSERT_NO_THROW(hipFileBatchIODestroy(b_handle));
+}
 #endif
 
 /// @brief Test hipFileIO function
