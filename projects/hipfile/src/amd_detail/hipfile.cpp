@@ -440,7 +440,7 @@ try {
 #else
     (void)flags; // Unused at this time.
 
-    if (iocbp == nullptr && nr > 0) {
+    if (nr == 0 || iocbp == nullptr) {
         return {hipFileInvalidValue, hipSuccess};
     }
 
