@@ -25,6 +25,9 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
   - For `mclk` and `fclk` ONLY, which expose a discrete DPM table, the requested `max` is now rounded down to the nearest selectable clock level, so the enforced limit never exceeds the requested value.
   - `sclk` supports a continuous frequency range, so its requested `max` is honored exactly (e.g. `600` enforces a limit of 600MHz) and is not snapped.
 
+- **Fixed an uninitialized processor index that let the CPU and Core APIs read an unrelated CPU socket**.  
+  - Passing a GPU, NIC, or switch handle to a CPU or Core API could return another socket's telemetry with `AMDSMI_STATUS_SUCCESS`. Such handles are now rejected. Calls that pass a CPU or Core handle are unaffected.
+
 ### Upcoming Changes
 
 - **UUIDs will be replaced by CUIDs in an upcoming version**.  
