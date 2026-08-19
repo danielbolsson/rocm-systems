@@ -2431,6 +2431,7 @@ amdsmi_status_t amdsmi_get_gpu_asic_info(amdsmi_processor_handle processor_handl
   info->target_graphics_version = std::numeric_limits<uint64_t>::max();
   info->subsystem_id = std::numeric_limits<uint32_t>::max();
   info->flags = 0;
+  info->silicon_rev_id = std::numeric_limits<uint32_t>::max();
 
   std::ostringstream ss;
   SMIGPUDEVICE_MUTEX(gpu_device->get_mutex())
@@ -2620,6 +2621,7 @@ amdsmi_status_t amdsmi_get_gpu_asic_info(amdsmi_processor_handle processor_handl
   // TODO(cpoag): check if this is correct, might be able to go through KGD/KFD
   info->rev_id = static_cast<uint32_t>(dev_info.pci_rev);
   info->flags = static_cast<uint64_t>(dev_info.ids_flags);
+  info->silicon_rev_id = static_cast<uint32_t>(dev_info.external_rev);
   libdrm.unload();
 
   ss << __PRETTY_FUNCTION__ << " | info->market_name: " << info->market_name << "\n"
@@ -2636,6 +2638,9 @@ amdsmi_status_t amdsmi_get_gpu_asic_info(amdsmi_processor_handle processor_handl
      << " | info->rev_id (dec): " << std::dec << info->rev_id << "\n"
      << " | info->rev_id (hex): 0x" << std::hex << std::setw(4) << std::setfill('0') << info->rev_id
      << "\n"
+     << " | info->silicon_rev_id (dec): " << std::dec << info->silicon_rev_id << "\n"
+     << " | info->silicon_rev_id (hex): 0x" << std::hex << std::setw(4) << std::setfill('0')
+     << info->silicon_rev_id << "\n"
      << " | info->asic_serial: 0x" << info->asic_serial << "\n"
      << " | info->oam_id (dec): " << std::dec << info->oam_id << "\n"
      << " | info->oam_id (hex): 0x" << std::hex << std::setw(4) << std::setfill('0') << info->oam_id

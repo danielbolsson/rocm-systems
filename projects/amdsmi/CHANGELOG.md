@@ -8,6 +8,11 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
 
 ### Added
 
+- **Added `silicon_rev_id` to `amdsmi_get_gpu_asic_info()`**.  
+  - Reports the silicon stepping (the amdgpu driver's `external_rev_id`), read from the `AMDGPU_INFO_DEV_INFO` DRM query. This is distinct from `rev_id`, which is the PCI config-space revision.
+  - Exposed as `silicon_rev_id` in the Python `amdsmi_get_gpu_asic_info()` dictionary and in `amd-smi static --asic`. Reports `0xFFFFFFFF` (`N/A`) when unsupported.
+  - ABI-preserving: the field consumes one `uint32_t` from `amdsmi_asic_info_t.reserved`, so the structure size and all existing field offsets are unchanged.
+
 ### Changed
 
 ### Optimized

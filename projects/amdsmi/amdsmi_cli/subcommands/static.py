@@ -294,6 +294,7 @@ class StaticCommands:
                 "device_id": "N/A",
                 "subsystem_id": "N/A",
                 "rev_id": "N/A",
+                "silicon_rev_id": "N/A",
                 "asic_serial": "N/A",
                 "oam_id": "N/A",
                 "num_compute_units": "N/A",

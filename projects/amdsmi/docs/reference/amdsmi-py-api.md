@@ -621,6 +621,7 @@ Field | Content
 `vendor_name` |  vendor name
 `device_id` |  device id
 `rev_id` |  revision id
+`silicon_rev_id` | silicon stepping (amdgpu `external_rev_id`)
 `asic_serial` | asic serial
 `oam_id` | oam id
 `num_of_compute_units` | number of compute units on asic

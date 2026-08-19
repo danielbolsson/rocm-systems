@@ -2855,10 +2855,15 @@ def amdsmi_get_gpu_asic_info(processor_handle: processor_handle_t) -> Dict[str, 
     target_graphics_version = hex(asic_info_struct.target_graphics_version)[2:]
     subsystem_id = _validate_if_max_uint(asic_info_struct.subsystem_id, MaxUIntegerTypes.UINT32_T)
     subvendor_id = _validate_if_max_uint(asic_info_struct.subvendor_id, MaxUIntegerTypes.UINT32_T)
+    silicon_rev_id = _validate_if_max_uint(
+        asic_info_struct.silicon_rev_id, MaxUIntegerTypes.UINT32_T
+    )
     if isinstance(subsystem_id, int):
         subsystem_id = _pad_hex_value(hex(subsystem_id), 4)
     if isinstance(subvendor_id, int):
         subvendor_id = _pad_hex_value(hex(subvendor_id), 4)
+    if isinstance(silicon_rev_id, int):
+        silicon_rev_id = _pad_hex_value(hex(silicon_rev_id), 2)
     asic_info = {
         "market_name": market_name,
         "vendor_id": asic_info_struct.vendor_id,
@@ -2866,6 +2871,7 @@ def amdsmi_get_gpu_asic_info(processor_handle: processor_handle_t) -> Dict[str, 
         "subvendor_id": subvendor_id,
         "device_id": asic_info_struct.device_id,
         "rev_id": _pad_hex_value(hex(asic_info_struct.rev_id), 2),
+        "silicon_rev_id": silicon_rev_id,
         "asic_serial": asic_info_struct.asic_serial.decode("utf-8"),
         "oam_id": _validate_if_max_uint(asic_info_struct.oam_id, MaxUIntegerTypes.UINT32_T),
         "num_compute_units": _validate_if_max_uint(

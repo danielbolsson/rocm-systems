@@ -1137,7 +1137,10 @@ typedef struct {
   uint64_t target_graphics_version;  //!< 0xFFFFFFFFFFFFFFFF if not supported
   uint32_t subsystem_id;             //!> The subsystem ID
   uint64_t flags;                    //!< Chip flags
-  uint32_t reserved[18];
+  uint32_t silicon_rev_id;           /**< Silicon stepping (amdgpu external_rev_id). Distinct from
+                                          rev_id, which is the PCI config-space revision.
+                                          0xFFFFFFFF if not supported */
+  uint32_t reserved[17];
 } amdsmi_asic_info_t;
 
 /**

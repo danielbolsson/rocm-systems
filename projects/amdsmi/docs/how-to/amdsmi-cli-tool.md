@@ -1171,6 +1171,7 @@ GPU: 0
         DEVICE_ID: 0x74a0
         SUBSYSTEM_ID: 0x74a0
         REV_ID: 0x00
+        SILICON_REV_ID: 0x46
         ASIC_SERIAL: 0xXXXXXXXXXXXXXXXX
         OAM_ID: 0
         NUM_COMPUTE_UNITS: 228

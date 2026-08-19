@@ -1241,7 +1241,8 @@ pub struct AmdsmiAsicInfoT {
     pub target_graphics_version: u64,
     pub subsystem_id: u32,
     pub flags: u64,
-    pub reserved: [u32; 18usize],
+    pub silicon_rev_id: u32,
+    pub reserved: [u32; 17usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
@@ -1271,8 +1272,10 @@ const _: () = {
         [::std::mem::offset_of!(AmdsmiAsicInfoT, subsystem_id) - 808usize];
     ["Offset of field: AmdsmiAsicInfoT::flags"]
         [::std::mem::offset_of!(AmdsmiAsicInfoT, flags) - 816usize];
+    ["Offset of field: AmdsmiAsicInfoT::silicon_rev_id"]
+        [::std::mem::offset_of!(AmdsmiAsicInfoT, silicon_rev_id) - 824usize];
     ["Offset of field: AmdsmiAsicInfoT::reserved"]
-        [::std::mem::offset_of!(AmdsmiAsicInfoT, reserved) - 824usize];
+        [::std::mem::offset_of!(AmdsmiAsicInfoT, reserved) - 828usize];
 };
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
