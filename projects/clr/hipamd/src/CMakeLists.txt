@@ -158,8 +158,9 @@ if(BUILD_SHARED_LIBS)
   else()
     # Unix compiler and linker default visibility to visible. Let's change to
     # hidden so we only expose what we need.
-    set(CMAKE_CXX_VISIBILITY_PRESET hidden)
-    set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+    set_target_properties(amdhip64 PROPERTIES
+      CXX_VISIBILITY_PRESET hidden
+      VISIBILITY_INLINES_HIDDEN ON)
     target_link_libraries(amdhip64 PRIVATE "-Wl,--version-script=${CMAKE_CURRENT_LIST_DIR}/hip_hcc.map.in")
     set_target_properties(amdhip64 PROPERTIES LINK_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/hip_hcc.map.in")
   endif()
