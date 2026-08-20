@@ -35,6 +35,7 @@
 #include "lib/rocprofiler-sdk/hsa/queue_controller.hpp"
 #include "lib/rocprofiler-sdk/hsa/queue_info_session.hpp"
 #include "lib/rocprofiler-sdk/hsa/queue_interposition.hpp"
+#include "lib/rocprofiler-sdk/hsa/replay_window.hpp"
 #include "lib/rocprofiler-sdk/hsa/signal_pool.hpp"
 #include "lib/rocprofiler-sdk/kernel_dispatch/profiling_time.hpp"
 #include "lib/rocprofiler-sdk/kernel_dispatch/tracing.hpp"
@@ -95,102 +96,6 @@ namespace hsa
 namespace
 {
 constexpr auto null_hsa_signal = hsa_signal_t{.handle = 0};
-
-// Per-agent replay serialization (reader/writer). A replay's snapshot->restore window must exclude
-// any concurrent GPU work on the agent that could mutate tracked device memory, but ordinary
-// dispatches do not conflict with one another. So this is a shared_mutex:
-//   * a replay window takes the UNIQUE (writer) lock for the whole drain->snap->passes->restore
-//     sequence, excluding all other replays and every non-replay dispatch on the agent;
-//   * a non-replay dispatch takes the SHARED (reader) lock across its submit, so many normal
-//     dispatches still run concurrently while a pending replay writer waits for in-flight submits
-//     to finish and blocks new ones from entering the window.
-// Different agents use different mutexes and run concurrently; combined with agent-scoped snapshots
-// this keeps multi-GPU replay isolated. The reader lock only bounds *submission*; the async GPU
-// tail is drained by the replay window before it snapshots.
-std::shared_mutex&
-agent_replay_mutex(rocprofiler_agent_id_t agent_id)
-{
-    // No get_fini_status() guard is needed here. Every caller reaches this only when
-    // has_active_replay_contexts() is true, and that returns false during finalization, so the
-    // static lock map below is never touched after teardown.
-    using lock_map_t    = std::unordered_map<uint64_t, std::unique_ptr<std::shared_mutex>>;
-    static auto*& locks = common::static_object<common::Synchronized<lock_map_t>>::construct();
-
-    std::shared_mutex* mtx = nullptr;
-    locks->wlock([&](lock_map_t& _map) {
-        auto& slot = _map[agent_id.handle];
-        if(!slot) slot = std::make_unique<std::shared_mutex>();
-        mtx = slot.get();
-    });
-    return *mtx;
-}
-
-template <typename TryDrainFn>
-void
-replay_wait_or_fatal(TryDrainFn&& try_drain_once, std::string_view what)
-{
-    static constexpr int drain_slices = 5;
-    static constexpr int max_slices   = 12;
-
-    for(int i = 0; i < max_slices; ++i)
-    {
-        if(try_drain_once()) return;
-        ROCP_WARNING << fmt::format(
-            "kernel replay: still waiting for {} (~{}s elapsed)", what, (i + 1) * drain_slices);
-    }
-    ROCP_FATAL << fmt::format(
-        "kernel replay: {} did not drain after ~{}s", what, max_slices * drain_slices);
-}
-
-// Drain a queue's in-flight async completion handler(s) during replay. Unlike Queue::sync()'s
-// teardown use (warn once and proceed), a replay pass must NOT proceed while a handler is still
-// running: PASS-EXIT, the tool's continue-decision, restore(), and the next submit would race the
-// handler that is still emitting records, releasing signals, and dropping correlation-id refs.
-// Each sync() call blocks up to one ~5s slice and reports whether the queue drained.
-void
-replay_drain_or_fatal(const Queue& queue)
-{
-    replay_wait_or_fatal([&]() { return queue.sync(); },
-                         "this queue's async completion handler(s)");
-}
-
-// Drain every queue on `agent` before snapshotting, WITHOUT holding the queue-map lock across the
-// wait. iterate_queues holds the queue-map read lock for the duration of its callback, so a
-// per-sibling blocking drain there would block stream creation/destruction for the whole (up to
-// ~60s) drain. Instead poll each queue's in-flight async count under a brief read lock and sleep
-// between polls, so the map lock is held only for the microsecond poll -- never across the wait.
-// Safe against concurrent queue destruction: a Queue is only dereferenced while the read lock is
-// held (destroy_queue erases under the write lock), and the live set is re-read every poll. The
-// per-agent writer lock held by the replay window blocks new dispatches on the agent, so in-flight
-// work only decreases and the poll converges; fatal on a genuinely stuck queue (beta feature),
-// matching replay_drain_or_fatal.
-void
-replay_drain_agent_or_fatal(hsa_agent_t agent)
-{
-    auto* queue_controller = get_queue_controller();
-    if(queue_controller == nullptr) return;
-
-    constexpr auto poll_interval = std::chrono::milliseconds{2};
-    constexpr auto max_wait      = std::chrono::seconds{60};
-    const auto     deadline      = std::chrono::steady_clock::now() + max_wait;
-
-    for(;;)
-    {
-        int64_t in_flight = 0;
-        queue_controller->iterate_queues([&](const Queue* sibling) {
-            if(sibling != nullptr && sibling->get_agent().get_hsa_agent().handle == agent.handle)
-                in_flight += sibling->active_async_packets();
-        });
-
-        if(in_flight == 0) return;
-
-        ROCP_FATAL_IF(std::chrono::steady_clock::now() >= deadline) << fmt::format(
-            "kernel replay: agent-wide drain stuck ({} async handler(s) still active after ~60s)",
-            in_flight);
-
-        std::this_thread::sleep_for(poll_interval);
-    }
-}
 
 template <typename DomainT, typename... Args>
 inline bool
