@@ -123,6 +123,57 @@ def find_cli_dir(*start_dirs):
     return None
 
 
+def add_class_cleanup(test_cls, func, *args):
+    """Run ``func`` after ``test_cls`` finishes.
+
+    Not ``addClassCleanup`` (3.8+, and Debian 10 ships 3.7). This runs off
+    ``tearDownClass``, which unittest skips when ``setUpClass`` raises, so a
+    class that dies mid-setup leaves its cleanups unrun.
+    """
+    # Own the list rather than inherit a base class's, so subclasses do not share.
+    cleanups = test_cls.__dict__.get("_pending_class_cleanups")
+    if cleanups is None:
+        cleanups = test_cls._pending_class_cleanups = []
+        previous = test_cls.tearDownClass.__func__
+
+        def _run_class_cleanups(cls):
+            try:
+                previous(cls)
+            finally:
+                while cleanups:  # last registered runs first, as addClassCleanup does
+                    cleanup, cleanup_args = cleanups.pop()
+                    cleanup(*cleanup_args)
+
+        test_cls.tearDownClass = classmethod(_run_class_cleanups)
+
+    cleanups.append((func, args))
+
+
+def stub_modules(test_cls, modules):
+    """Replace ``sys.modules`` entries for the lifetime of ``test_cls``.
+
+    ``modules`` maps a module name to its replacement; a ``None`` value removes the
+    name instead, so the next import re-resolves it. A stub that outlives its class
+    corrupts every later test module in the same interpreter, which is what the
+    runner's isolation guard reports as a leak.
+    """
+    saved = {name: sys.modules.get(name) for name in modules}
+
+    def _restore():
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+    add_class_cleanup(test_cls, _restore)
+    for name, module in modules.items():
+        if module is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = module
+
+
 amdsmi_path = os.environ.get("AMDSMI_PATH") or os.path.join(
     os.environ.get("ROCM_HOME") or os.environ.get("ROCM_PATH") or "/opt/rocm", "share/amd_smi"
 )
