@@ -432,10 +432,17 @@ amdcuid_status_t CuidCpu::get_primary_cuid(amdcuid_primary_id& id) const {
     status = get_hardware_fingerprint(fingerprint);
   }
   if (geteuid() != 0 || status != AMDCUID_STATUS_SUCCESS) {
-    // Non-root or fingerprint unavailable: use socket index + machine-id as
-    // a stable but non-hardware fallback, flagged as temporary.
-    std::string socket_id = "socket:" + std::to_string(m_info.header.fields.cpu.physical_id);
-    amdcuid_status_t fb_status = CuidUtilities::make_fallback_fingerprint(socket_id, fingerprint);
+    // Non-root or fingerprint unavailable: derive from the auxiliary input
+    // structure, flagged as temporary. The CPU Format carries no Routing ID;
+    // the socket is distinguished by the UnitID in the primary payload.
+    CuidUtilities::AuxiliaryInput aux;
+    aux.format = CuidUtilities::kAuxFormatCpu;
+    aux.routing_id = 0;
+    aux.revision_id = m_info.header.fields.cpu.revision_id;
+    aux.device_id = m_info.header.fields.cpu.device_id;
+    aux.vendor_id = m_info.header.fields.cpu.vendor_id;
+    aux.component_type = static_cast<uint8_t>(AMDCUID_DEVICE_TYPE_CPU);
+    amdcuid_status_t fb_status = CuidUtilities::make_fallback_fingerprint(aux, fingerprint);
     if (fb_status != AMDCUID_STATUS_SUCCESS) {
       return AMDCUID_STATUS_HW_FINGERPRINT_NOT_FOUND;
     }
@@ -445,9 +452,9 @@ amdcuid_status_t CuidCpu::get_primary_cuid(amdcuid_primary_id& id) const {
   // Use CuidUtilities::generate_primary_cuid to generate CUID
   amdcuid_primary_id result = {};
   const auto& h = m_info.header;
-  CuidUtilities::generate_primary_cuid(
-      fingerprint, h.fields.cpu.unit_id, h.fields.cpu.revision_id, h.fields.cpu.device_id,
-      h.fields.cpu.vendor_id, static_cast<uint8_t>(AMDCUID_DEVICE_TYPE_CPU), &result, temp);
+  CuidUtilities::generate_primary_cuid(fingerprint, h.fields.cpu.unit_id, h.fields.cpu.revision_id,
+                                       h.fields.cpu.device_id, h.fields.cpu.vendor_id,
+                                       AMDCUID_DEVICE_TYPE_CPU, &result, temp);
 
   id = result;
   return AMDCUID_STATUS_SUCCESS;

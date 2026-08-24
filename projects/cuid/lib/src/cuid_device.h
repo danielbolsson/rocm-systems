@@ -12,13 +12,26 @@
 #include "src/cuid_internal.h"
 #include "src/hmac.h"
 
+// Unpack the 110-bit hash out of a derived CUID's 16 raw payload octets.
+// Shared by every path that reconstitutes a derived ID it did not compute
+// itself -- the on-disk record and the driver interface -- so that all of them
+// recover the same hash from the same value.
+void get_hash_from_raw(uint8_t raw_bytes[16], uint8_t out_hash[14]);
+
 class CuidDevice {
  public:
   virtual ~CuidDevice() = default;
   virtual amdcuid_device_type_t type() const = 0;
   virtual amdcuid_status_t get_primary_cuid(amdcuid_primary_id& id) const = 0;
   virtual amdcuid_status_t get_hardware_fingerprint(uint64_t& fingerprint) const = 0;
-  amdcuid_status_t get_derived_cuid(amdcuid_derived_id& id, cuid_hmac* hmac = nullptr) const;
+  // Stage 2 and 3 of the staged lookup: the daemon/config-file store, then the
+  // library's own computation. Virtual so that a device class whose driver
+  // publishes a CUID can put stage 1 -- the driver interface -- in front of it
+  // and delegate here only when the driver has nothing to say. Two producers
+  // that independently compute the same value eventually disagree and nothing
+  // in the values reveals it, so where the kernel answers, it is the answer.
+  virtual amdcuid_status_t get_derived_cuid(amdcuid_derived_id& id,
+                                            cuid_hmac* hmac = nullptr) const;
   amdcuid_status_t is_temporary_cuid(bool* is_temporary) const;
 
   // Virtual accessors for common device properties with default wrong device

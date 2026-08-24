@@ -218,7 +218,14 @@ amdcuid_status_t CuidNic::get_primary_cuid(amdcuid_primary_id& id) const {
     if (status != AMDCUID_STATUS_SUCCESS) {
       return status;
     }
-    status = CuidUtilities::make_fallback_fingerprint(bdf, fingerprint);
+    CuidUtilities::AuxiliaryInput aux;
+    aux.format = CuidUtilities::kAuxFormatPcie;
+    aux.routing_id = CuidUtilities::routing_id_from_bdf(bdf);
+    aux.revision_id = m_info.header.fields.nic.revision_id;
+    aux.device_id = m_info.header.fields.nic.device_id;
+    aux.vendor_id = m_info.header.fields.nic.vendor_id;
+    aux.component_type = static_cast<uint8_t>(AMDCUID_DEVICE_TYPE_NIC);
+    status = CuidUtilities::make_fallback_fingerprint(aux, fingerprint);
     if (status != AMDCUID_STATUS_SUCCESS) {
       return status;
     }
@@ -227,7 +234,7 @@ amdcuid_status_t CuidNic::get_primary_cuid(amdcuid_primary_id& id) const {
 
   status = CuidUtilities::generate_primary_cuid(
       fingerprint, 0, m_info.header.fields.nic.revision_id, m_info.header.fields.nic.device_id,
-      m_info.header.fields.nic.vendor_id, static_cast<uint8_t>(AMDCUID_DEVICE_TYPE_NIC), &id, temp);
+      m_info.header.fields.nic.vendor_id, AMDCUID_DEVICE_TYPE_NIC, &id, temp);
   if (status != AMDCUID_STATUS_SUCCESS) {
     std::memset(&id, 0, sizeof(id));
     return status;

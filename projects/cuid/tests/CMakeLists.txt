@@ -53,6 +53,7 @@ set(TEST_SOURCES_UNIT
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/acpi_parser_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/concurrency_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/cuid_gpu_test.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/driver_cuid_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/file_lock_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/gim_util_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/id_string_test.cc
@@ -60,6 +61,7 @@ set(TEST_SOURCES_UNIT
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/sha256_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/status_string_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/utilities_test.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/vectors_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/version_read_test.cc
 )
 
@@ -78,6 +80,7 @@ set(TEST_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/acpi_parser_test.h
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/concurrency_test.h
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/cuid_gpu_test.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/driver_cuid_test.h
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/file_lock_test.h
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/gim_util_test.h
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/id_string_test.h
@@ -85,6 +88,7 @@ set(TEST_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/sha256_test.h
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/status_string_test.h
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/utilities_test.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/vectors_test.h
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/version_read_test.h
     ${CMAKE_CURRENT_SOURCE_DIR}/functional/device_handles_test.h
     ${CMAKE_CURRENT_SOURCE_DIR}/functional/device_query_test.h
@@ -115,6 +119,27 @@ target_include_directories(
 find_package(Threads REQUIRED)
 
 target_link_libraries(${AMDCUID_TST_EXECUTABLE} amdcuid_static GTest::gtest Threads::Threads)
+
+# The conformance vectors are read at run time rather than compiled in, so the
+# generator stays the single source of truth. AMDCUID_VECTORS_PATH overrides it
+# when the binary is run from an install tree.
+target_compile_definitions(
+    ${AMDCUID_TST_EXECUTABLE}
+    PRIVATE AMDCUID_VECTORS_FILE="${CMAKE_CURRENT_SOURCE_DIR}/vectors/cuid_vectors.txt"
+)
+
+# Fail the build if cuid_vectors.txt has drifted from its generator, the same
+# way check_sha256_drift.py guards the SHA-256 sources.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_custom_target(
+        amdcuid_vectors_check ALL
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/vectors/cuid_vectors.py --check
+        COMMENT "Checking CUID conformance vectors are up to date"
+        VERBATIM
+    )
+    add_dependencies(${AMDCUID_TST_EXECUTABLE} amdcuid_vectors_check)
+endif()
 
 # Register two CTest targets split by privilege level.
 add_test(NAME cuid_unprivileged_tests COMMAND ${AMDCUID_TST_EXECUTABLE} --gtest_filter=cuidtstUnprivileged.*)

@@ -780,10 +780,17 @@ amdcuid_status_t generate_from_devices(const std::vector<std::shared_ptr<CuidDev
           entry.device_node = info.render_node;
           entry.bdf = info.bdf;
 
-          // if temp CUID, make the fallback fingerprint based on the GPU's PCIe
-          // BDF
+          // if temp CUID, rebuild the auxiliary fingerprint from the same
+          // input structure the device used
           if (is_temporary) {
-            CuidUtilities::make_fallback_fingerprint(info.bdf, entry.hardware_fingerprint);
+            CuidUtilities::AuxiliaryInput aux;
+            aux.format = CuidUtilities::kAuxFormatPcie;
+            aux.routing_id = CuidUtilities::routing_id_from_bdf(info.bdf);
+            aux.revision_id = info.header.fields.gpu.revision_id;
+            aux.device_id = info.header.fields.gpu.device_id;
+            aux.vendor_id = info.header.fields.gpu.vendor_id;
+            aux.component_type = static_cast<uint8_t>(AMDCUID_DEVICE_TYPE_GPU);
+            CuidUtilities::make_fallback_fingerprint(aux, entry.hardware_fingerprint);
           }
         }
         break;
@@ -805,11 +812,17 @@ amdcuid_status_t generate_from_devices(const std::vector<std::shared_ptr<CuidDev
           if (cpu->get_device_path(cpu_device_path) == AMDCUID_STATUS_SUCCESS) {
             entry.device_node = cpu_device_path;
           }
-          // if temp CUID, make the fallback fingerprint based on the CPU's
-          // package
+          // if temp CUID, rebuild the auxiliary fingerprint from the same
+          // input structure the device used
           if (is_temporary) {
-            CuidUtilities::make_fallback_fingerprint(std::to_string(entry.package_id),
-                                                     entry.hardware_fingerprint);
+            CuidUtilities::AuxiliaryInput aux;
+            aux.format = CuidUtilities::kAuxFormatCpu;
+            aux.routing_id = 0;
+            aux.revision_id = info.header.fields.cpu.revision_id;
+            aux.device_id = info.header.fields.cpu.device_id;
+            aux.vendor_id = info.header.fields.cpu.vendor_id;
+            aux.component_type = static_cast<uint8_t>(AMDCUID_DEVICE_TYPE_CPU);
+            CuidUtilities::make_fallback_fingerprint(aux, entry.hardware_fingerprint);
           }
         }
         break;
@@ -829,10 +842,17 @@ amdcuid_status_t generate_from_devices(const std::vector<std::shared_ptr<CuidDev
           }
           entry.bdf = info.bdf;
 
-          // if temp CUID, make the fallback fingerprint based on the NIC's PCIe
-          // BDF
+          // if temp CUID, rebuild the auxiliary fingerprint from the same
+          // input structure the device used
           if (is_temporary) {
-            CuidUtilities::make_fallback_fingerprint(info.bdf, entry.hardware_fingerprint);
+            CuidUtilities::AuxiliaryInput aux;
+            aux.format = CuidUtilities::kAuxFormatPcie;
+            aux.routing_id = CuidUtilities::routing_id_from_bdf(info.bdf);
+            aux.revision_id = info.header.fields.nic.revision_id;
+            aux.device_id = info.header.fields.nic.device_id;
+            aux.vendor_id = info.header.fields.nic.vendor_id;
+            aux.component_type = static_cast<uint8_t>(AMDCUID_DEVICE_TYPE_NIC);
+            CuidUtilities::make_fallback_fingerprint(aux, entry.hardware_fingerprint);
           }
         }
         break;
@@ -847,10 +867,17 @@ amdcuid_status_t generate_from_devices(const std::vector<std::shared_ptr<CuidDev
           entry.pci_class = info.header.fields.npu.pci_class;
           entry.device_node = info.accel_node;
           entry.bdf = info.bdf;
-          // if temp CUID, make the fallback fingerprint based on the NPU's PCIe
-          // BDF
+          // if temp CUID, rebuild the auxiliary fingerprint from the same
+          // input structure the device used
           if (is_temporary) {
-            CuidUtilities::make_fallback_fingerprint(info.bdf, entry.hardware_fingerprint);
+            CuidUtilities::AuxiliaryInput aux;
+            aux.format = CuidUtilities::kAuxFormatPcie;
+            aux.routing_id = CuidUtilities::routing_id_from_bdf(info.bdf);
+            aux.revision_id = info.header.fields.npu.revision_id;
+            aux.device_id = info.header.fields.npu.device_id;
+            aux.vendor_id = info.header.fields.npu.vendor_id;
+            aux.component_type = static_cast<uint8_t>(AMDCUID_DEVICE_TYPE_NPU);
+            CuidUtilities::make_fallback_fingerprint(aux, entry.hardware_fingerprint);
           }
         }
         break;
@@ -862,14 +889,10 @@ amdcuid_status_t generate_from_devices(const std::vector<std::shared_ptr<CuidDev
           const auto& info = platform->get_info();
           entry.vendor_id = info.header.fields.platform.vendor_id;
 
-          // if temp CUID, make the fallback fingerprint based on the platform
-          // product name
-          if (is_temporary) {
-            std::string name = "";
-            std::string family_dummy = "";
-            SmbiosUtil::get_product_info(name, family_dummy);
-            CuidUtilities::make_fallback_fingerprint(name, entry.hardware_fingerprint);
-          }
+          // The Platform CUID has no auxiliary form: it is the SMBIOS system
+          // UUID verbatim, or it is built from the system serial through the
+          // normal layout, or the platform has no CUID at all. There is nothing
+          // to synthesise here.
         }
         break;
       }

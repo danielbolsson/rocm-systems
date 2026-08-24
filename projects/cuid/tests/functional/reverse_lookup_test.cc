@@ -20,8 +20,8 @@
 //   [10..11] device_id (uint16_t, little-endian) (raw bits 80:95)
 //   [12..13] vendor_id (uint16_t, little-endian) (raw bits 96:111)
 //   [14]     bits[4:0]=unit_id upper 5 bits | bit[5]=aux_indicator |
-//            bits[7:6]=device_type[1:0]
-//   [15]     bits[7:6]=device_type[3:2] | bits[5:0]=padding
+//            bits[7:6]=device_type[1:0]   (payload bits 112:119)
+//   [15]     bits[1:0]=device_type[3:2] | bits[7:2]=padding (payload 120:127)
 static void extract_primary_raw_bits(const amdcuid_id_t& uuid, uint8_t raw_bits[16]) {
   amdcuid_id_t mutable_uuid = uuid;
   CuidUtilities::remove_UUIDv8_bits(&mutable_uuid, raw_bits);
@@ -69,32 +69,52 @@ void TestReverseSerialNumber::Run() {
       amdcuid_query_device_property(device_handles_[i], AMDCUID_QUERY_DEVICE_TYPE, &device_type,
                                     &length);
 
+      // Rebuild the auxiliary input structure from the device's own published
+      // properties. This test used to recompute the CPU seed as
+      // "<physical_id>:<core_id>" while the library used "socket:<physical_id>",
+      // so the two never agreed; the fixed-width structure removes the chance
+      // to disagree about formatting.
+      CuidUtilities::AuxiliaryInput aux;
+      aux.component_type = static_cast<uint8_t>(device_type);
+
+      uint16_t vendor_id = 0, device_id = 0;
+      length = sizeof(vendor_id);
+      amdcuid_query_device_property(device_handles_[i], AMDCUID_QUERY_VENDOR_ID, &vendor_id,
+                                    &length);
+      length = sizeof(device_id);
+      amdcuid_query_device_property(device_handles_[i], AMDCUID_QUERY_DEVICE_ID, &device_id,
+                                    &length);
+      aux.vendor_id = vendor_id;
+      aux.device_id = device_id;
+
+      uint16_t revision_id = 0;
+      length = sizeof(revision_id);
+      amdcuid_query_device_property(device_handles_[i], AMDCUID_QUERY_REVISION_ID, &revision_id,
+                                    &length);
+      aux.revision_id = static_cast<uint8_t>(revision_id);
+
       switch (device_type) {
-        case AMDCUID_DEVICE_TYPE_PLATFORM: {
-          std::string name, family_dummy;
-          status = SmbiosUtil::get_product_info(name, family_dummy);
-          EXPECT_EQ(status, AMDCUID_STATUS_SUCCESS);
-          CuidUtilities::make_fallback_fingerprint(name, serial_number);
-        } break;
-        case AMDCUID_DEVICE_TYPE_CPU: {
-          uint16_t physical_id = 0, core_id = 0;
-          length = sizeof(physical_id);
-          amdcuid_query_device_property(device_handles_[i], AMDCUID_QUERY_PHYSICAL_ID, &physical_id,
-                                        &length);
-          length = sizeof(core_id);
-          amdcuid_query_device_property(device_handles_[i], AMDCUID_QUERY_CORE_ID, &core_id,
-                                        &length);
-          std::string physical_core_id =
-              std::to_string(physical_id) + ":" + std::to_string(core_id);
-          CuidUtilities::make_fallback_fingerprint(physical_core_id, serial_number);
-        } break;
+        case AMDCUID_DEVICE_TYPE_PLATFORM:
+          // The Platform CUID has no auxiliary form: it is the SMBIOS system
+          // UUID verbatim, or it is built from the system serial, or the
+          // platform has no CUID. Reaching here means the library reported a
+          // temporary Platform CUID, which it must not.
+          FAIL() << "Platform CUID must not be temporary";
+          break;
+        case AMDCUID_DEVICE_TYPE_CPU:
+          aux.format = CuidUtilities::kAuxFormatCpu;
+          aux.routing_id = 0;
+          CuidUtilities::make_fallback_fingerprint(aux, serial_number);
+          break;
         case AMDCUID_DEVICE_TYPE_GPU:
         case AMDCUID_DEVICE_TYPE_NIC:
         case AMDCUID_DEVICE_TYPE_NPU: {
           char bdf[32] = {0};
           length = sizeof(bdf);
           amdcuid_query_device_property(device_handles_[i], AMDCUID_QUERY_BDF, bdf, &length);
-          CuidUtilities::make_fallback_fingerprint(bdf, serial_number);
+          aux.format = CuidUtilities::kAuxFormatPcie;
+          aux.routing_id = CuidUtilities::routing_id_from_bdf(bdf);
+          CuidUtilities::make_fallback_fingerprint(aux, serial_number);
         } break;
         default:
           FAIL() << "Unsupported device type for fallback fingerprint";
@@ -343,10 +363,13 @@ void TestReverseDeviceType::Run() {
 
     uint8_t raw_bits[16] = {0};
     extract_primary_raw_bits(primary_id, raw_bits);
-    // device_type is 4 bits: bits [7:6] of raw_bits[14] hold bits [1:0],
-    // bits [7:6] of raw_bits[15] hold bits [3:2].
+    // device_type is 4 bits: bits [7:6] of raw_bits[14] hold bits [1:0]
+    // (payload 118:119), bits [1:0] of raw_bits[15] hold bits [3:2] (payload
+    // 120:121). This used to read raw_bits[15] bits [7:6] -- payload 126:127,
+    // which is padding -- decoding the type from the same wrong position the
+    // packer wrote it to, so it confirmed the bug against itself.
     uint8_t extracted_type =
-        static_cast<uint8_t>(((raw_bits[14] >> 6) & 0x3) | ((raw_bits[15] >> 4) & 0xC));
+        static_cast<uint8_t>(((raw_bits[14] >> 6) & 0x3) | ((raw_bits[15] << 2) & 0xC));
 
     amdcuid_device_type_t queried_type = AMDCUID_DEVICE_TYPE_NONE;
     length = sizeof(queried_type);

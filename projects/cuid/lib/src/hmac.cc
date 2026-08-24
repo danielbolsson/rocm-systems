@@ -46,12 +46,9 @@
 
 namespace {
 
-// Used when no secret is provisioned. Byte-identical to CUID_DEFAULT_SEED in
-// the kernel's amdgpu_cuid.c, so sysfs and this library agree on an
-// unprovisioned machine. Not a substitute for provisioning; callers can check
-// is_using_default_key().
-constexpr char kDefaultSeed[] = "AMD-CUID-DEFAULT-SEED-v1";
-constexpr size_t kDefaultSeedLen = sizeof(kDefaultSeed) - 1;
+// kDefaultSeed / kDefaultSeedLen and kTemporaryKey / kTemporaryKeyLen are
+// declared in hmac.h, so that the two constants that key every derived CUID are
+// stated in one visible place.
 
 // The only digest CUID uses. A wider one would overrun the caller's 32-byte
 // output buffer, so set_hmac_algorithm() rejects everything else.
@@ -176,6 +173,22 @@ cuid_hmac::cuid_hmac(uint8_t key_data[key_length])
 
   key = new uint8_t[key_length];
   std::memcpy(key, key_data, key_length);
+
+  valid = true;
+}
+
+cuid_hmac::cuid_hmac(const char* key_data, size_t len)
+    : impl_(nullptr), key(nullptr), key_len(len), valid(false), using_default_key(false) {
+  impl_ = new Impl();
+  impl_->digest_name = "SHA256";
+
+  if (!key_data || len == 0) {
+    key_len = key_length;
+    return;  // leaves valid == false
+  }
+
+  key = new uint8_t[len];
+  std::memcpy(key, key_data, len);
 
   valid = true;
 }

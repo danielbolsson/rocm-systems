@@ -19,6 +19,26 @@ env:
   ROCM_DIR: /opt/rocm
 
 jobs:
+  vectors-drift-check:
+    name: CUID Conformance Vectors
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    runs-on:
+      - self-hosted
+      - ${{ vars.RUNNER_TYPE }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: |
+            projects/cuid/tests/vectors
+          sparse-checkout-cone-mode: false
+
+      # The vectors are the cross-layer format contract: the amdgpu driver runs
+      # the same table. Regenerating and comparing catches a hand-edited entry,
+      # which is the only way a vector can decay in the direction of the bug it
+      # was meant to catch.
+      - name: Check the conformance vectors are up to date
+        run: python3 projects/cuid/tests/vectors/cuid_vectors.py --check
+
   build-and-test:
     name: Build and Test
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}

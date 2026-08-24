@@ -115,15 +115,27 @@ const char* amdcuid_id_to_string(amdcuid_id_t cuid_value);
 
 /**
  * @brief Enumeration of device types supported by the AMD CUID library.
+ *
+ * These are the CUID specification's on-wire Component Type values, so an
+ * enumerator can be written straight into the Component Type field (payload
+ * bits 118:121) with no translation step.
+ *
+ * They were previously offset by one, which put a GPU on the wire as 0x3 - the
+ * value a conforming reader decodes as a NIC. Renumbering changes every primary
+ * CUID this library has emitted for a GPU, NIC or NPU; the previous values
+ * misnamed the device class and cannot be kept.
+ *
+ * AMDCUID_DEVICE_TYPE_NONE is deliberately outside the range a 4-bit field can
+ * hold, so a sentinel can never be mistaken for a valid Component Type.
  */
 typedef enum {
-  AMDCUID_DEVICE_TYPE_NONE = 0,        ///< No device type
-  AMDCUID_DEVICE_TYPE_PLATFORM = 0x1,  ///< Platform device (chassis, motherboard)
-  AMDCUID_DEVICE_TYPE_CPU = 0x2,       ///< CPU core
-  AMDCUID_DEVICE_TYPE_GPU = 0x3,       ///< GPU
-  AMDCUID_DEVICE_TYPE_NIC = 0x4,       ///< NIC (Network Interface Controller)
-  AMDCUID_DEVICE_TYPE_NPU = 0x5,       ///< NPU (Neural Processing Unit, e.g. RyzenAI)
-  AMDCUID_DEVICE_TYPE_LAST = 0x5       ///< Last valid device type
+  AMDCUID_DEVICE_TYPE_PLATFORM = 0x0,  ///< Platform device (chassis, motherboard)
+  AMDCUID_DEVICE_TYPE_CPU = 0x1,       ///< CPU
+  AMDCUID_DEVICE_TYPE_GPU = 0x2,       ///< GPU
+  AMDCUID_DEVICE_TYPE_NIC = 0x3,       ///< NIC (Network Interface Controller)
+  AMDCUID_DEVICE_TYPE_NPU = 0x4,       ///< NPU (Neural Processing Unit, e.g. RyzenAI)
+  AMDCUID_DEVICE_TYPE_LAST = 0x4,      ///< Last valid device type
+  AMDCUID_DEVICE_TYPE_NONE = 0xFF      ///< No device type; not a valid Component Type
 } amdcuid_device_type_t;
 
 /**
@@ -267,16 +279,17 @@ typedef enum {
   AMDCUID_QUERY_BDF = 15,  ///< Query the PCI BDF (string in format "bus:device.function", e.g.
                            ///< "0000:03:00.0"). Supported by GPU and NIC device types.
   AMDCUID_QUERY_TEMPORARY_CUID =
-      16,  ///< Query to determine if a CUID is temporary (bool). This is true if
-           ///< the CUID is not derived from a hardware fingerprint that is not
-           ///< stable or accessible, and thus the library generated a CUID based
-           ///< on non unique device information. Temporary CUIDs will be clearly
-           ///< indicated as such when converted to strings by
-           ///< amdcuid_id_to_string() to warn users that the CUID may not be
-           ///< unique or stable. Users should not rely on temporary CUIDs for
-           ///< use cases that require uniqueness or stability, as they may
-           ///< change or may not be unique if devices are shifted around within
-           ///< a system.
+      16,  ///< Query to determine if a CUID is temporary, that is auxiliary
+           ///< (bool). True when no stable or accessible hardware serial was
+           ///< available and the library built the identifier from
+           ///< non-privileged device information instead. This query is the
+           ///< only way to ask: a temporary CUID is a well-formed UUIDv8 like
+           ///< any other and amdcuid_id_to_string() does not mark it, on
+           ///< purpose, so that a consumer needs one parser rather than two.
+           ///< The marker is payload bit 117, the Auxiliary Value Identifier.
+           ///< Do not rely on a temporary CUID where uniqueness or stability
+           ///< matters: it is not guaranteed unique across nodes and it changes
+           ///< if the OS installation or the device topology changes.
   AMDCUID_QUERY_LAST
 } amdcuid_query_t;
 

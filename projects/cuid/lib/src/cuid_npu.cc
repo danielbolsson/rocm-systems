@@ -283,7 +283,14 @@ amdcuid_status_t CuidNpu::get_primary_cuid(amdcuid_primary_id& id) const {
     if (status != AMDCUID_STATUS_SUCCESS) {
       return status;
     }
-    status = CuidUtilities::make_fallback_fingerprint(bdf, fingerprint);
+    CuidUtilities::AuxiliaryInput aux;
+    aux.format = CuidUtilities::kAuxFormatPcie;
+    aux.routing_id = CuidUtilities::routing_id_from_bdf(bdf);
+    aux.revision_id = m_info.header.fields.npu.revision_id;
+    aux.device_id = m_info.header.fields.npu.device_id;
+    aux.vendor_id = m_info.header.fields.npu.vendor_id;
+    aux.component_type = static_cast<uint8_t>(AMDCUID_DEVICE_TYPE_NPU);
+    status = CuidUtilities::make_fallback_fingerprint(aux, fingerprint);
     if (status != AMDCUID_STATUS_SUCCESS) {
       return status;
     }
@@ -294,7 +301,7 @@ amdcuid_status_t CuidNpu::get_primary_cuid(amdcuid_primary_id& id) const {
       fingerprint,
       0,  // unit_id: NPUs are not partitioned
       m_info.header.fields.npu.revision_id, m_info.header.fields.npu.device_id,
-      m_info.header.fields.npu.vendor_id, static_cast<uint8_t>(AMDCUID_DEVICE_TYPE_NPU), &id, temp);
+      m_info.header.fields.npu.vendor_id, AMDCUID_DEVICE_TYPE_NPU, &id, temp);
   if (status != AMDCUID_STATUS_SUCCESS) {
     std::memset(&id, 0, sizeof(id));
     return status;

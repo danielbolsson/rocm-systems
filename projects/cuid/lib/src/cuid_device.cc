@@ -36,8 +36,12 @@ void get_hash_from_raw(uint8_t raw_bytes[16], uint8_t out_hash[14]) {
 
   // byte 8 of raw bits is reserved which we can skip
   memcpy(&out_hash[8], &raw_bytes[9], 5);
-  // byte 14 of raw bits has 2 reserved bits in the MSBs, so mask those off
-  out_hash[13] = raw_bytes[14] & 0x3F;
+  // The derived slot is 45 bits, so byte 14 carries only 5 hash bits: bit 5 is
+  // the Auxiliary Value Identifier (payload bit 117) and bits 6:7 are reserved.
+  // Recovering 6 bits here used to fold the auxiliary marker into the hash, so
+  // an auxiliary derived ID written to the record and read back did not match
+  // the one that was generated.
+  out_hash[13] = raw_bytes[14] & 0x1F;
 }
 
 void build_derived_id_from_file_entry(const CuidFileEntry& entry, amdcuid_derived_id& id) {
@@ -149,29 +153,22 @@ amdcuid_status_t CuidDevice::get_derived_cuid(amdcuid_derived_id& id, cuid_hmac*
   // real HMAC key or the temp key for derived CUID generation
   bool temp = primary.raw_bits[14] & 0x20;  // check the temp indicator bit in the reserved bits
   if (temp) {
-    // machine id is what needs to be protected and under HMAC system, message
-    // is not guaranteed protection when output is well known so use machine id
-    // (recorded in the primary CUID) as the key for generating the derived
-    // CUID, and use a fixed application ID as the message to generate a
-    // consistent derived CUID for non-privileged users without access to the
-    // real HMAC key or primary CUID
-    amdcuid_primary_id fixed_app_id = {};
-    // Application UUID: UUID_v5(NAMESPACE_DNS, "com.amd.cuid.v1")
-    static const uint8_t CUID_APP_UUID[16] = {0xac, 0x05, 0xca, 0x9f, 0x1a, 0xc4, 0x58, 0xb9,
-                                              0x92, 0x7e, 0x2e, 0x17, 0x51, 0x47, 0x9c, 0x01};
-    memcpy(fixed_app_id.raw_bits, CUID_APP_UUID, 16);
-    CuidUtilities::add_UUIDv8_bits(fixed_app_id.raw_bits, &fixed_app_id.UUIDv8_representation);
-
-    // Use the machine ID from the primary CUID as the key for HMAC, so that the
-    // derived CUID is consistent for the same machine even for non-privileged
-    // users
-    uint8_t padded_key[key_length] = {};
-    memcpy(padded_key, primary.raw_bits, sizeof(primary.raw_bits));
-    // not using set_key here because we don't want to write to overwrite user
-    // key
-    cuid_hmac temp_hmac = cuid_hmac(padded_key);
-    temp_hmac.set_hmac_algorithm("SHA256");
-    status = CuidUtilities::generate_derived_cuid(&fixed_app_id, &id, &temp_hmac);
+    // An auxiliary CUID is derived with the fixed public temporary key, in the
+    // same operand order as every other derivation: the key is the constant and
+    // the message is the 16 auxiliary primary octets.
+    //
+    // This previously ran the other way round -- key = the primary payload,
+    // message = a fixed application UUID -- on the argument that the machine ID
+    // inside the primary needed protecting. It does not gain anything: with a
+    // public key HMAC is a keyed hash, and its preimage resistance protects the
+    // message whichever way round the operands go. What the swap did cost was a
+    // second derivation path and a real defect -- generate_derived_cuid() reads
+    // bit 117 out of whatever it is handed as the primary, so with a fixed
+    // constant in that position the derived value was never marked auxiliary.
+    cuid_hmac temp_hmac(kTemporaryKey, kTemporaryKeyLen);
+    status = temp_hmac.set_hmac_algorithm("SHA256");
+    if (status != AMDCUID_STATUS_SUCCESS) return status;
+    status = CuidUtilities::generate_derived_cuid(&primary, &id, &temp_hmac);
   } else {
     status = CuidUtilities::generate_derived_cuid(&primary, &id, hmac);
   }
