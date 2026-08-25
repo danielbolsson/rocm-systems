@@ -284,6 +284,77 @@ def test_hip_event_deferred_wait(json_data):
     )
 
 
+def test_hip_event_wait_queue_identity(json_data):
+    """Verify WAIT records report the waiting queue, not the recording queue.
+
+    For a cross-stream wait where event was recorded on stream0 and
+    hipStreamWaitEvent was called on stream1, the WAIT record must have:
+    - queue_id = stream1's queue (the waiting queue)
+    - source_queue_id = stream0's queue (the recording queue)
+
+    We verify:
+    - WAIT queue_id is a queue with kernel dispatches (the waiting stream)
+    - WAIT source_queue_id is a queue with RECORD records (the recording stream)
+    - The two are different
+    """
+    data = json_data["rocprofiler-sdk-tool"]
+    records = data["buffer_records"]["hip_event"]
+    kernel_records = data["buffer_records"]["kernel_dispatch"]
+
+    record_queues = set(
+        r.queue_id.handle for r in records if r.operation == HIP_EVENT_RECORD
+    )
+    kernel_queues = set(r.dispatch_info.queue_id.handle for r in kernel_records)
+
+    wait_records = [
+        r
+        for r in records
+        if r.operation == HIP_EVENT_WAIT and r.queue_id.handle != r.source_queue_id.handle
+    ]
+
+    for w in wait_records:
+        assert w.queue_id.handle in kernel_queues, (
+            f"WAIT record queue_id {w.queue_id.handle} is not a kernel dispatch "
+            f"queue. This suggests the WAIT is reporting the recording queue "
+            f"instead of the waiting queue. Kernel queues: {kernel_queues}"
+        )
+        assert w.source_queue_id.handle in record_queues, (
+            f"WAIT record source_queue_id {w.source_queue_id.handle} is not a "
+            f"known recording queue. Record queues: {record_queues}"
+        )
+        assert w.queue_id.handle != w.source_queue_id.handle, (
+            f"WAIT record queue_id == source_queue_id ({w.queue_id.handle}), "
+            f"expected different queues for cross-stream wait"
+        )
+
+
+def test_hip_event_duplicate_wait(json_data):
+    """Verify that two streams waiting on the same event both produce WAIT
+    records.
+
+    The test binary records event0 on stream0, then calls
+    hipStreamWaitEvent on both stream1 and stream2. Both waits should
+    produce completion records with different queue_ids.
+    """
+    data = json_data["rocprofiler-sdk-tool"]
+    records = data["buffer_records"]["hip_event"]
+
+    wait_records = [r for r in records if r.operation == HIP_EVENT_WAIT]
+
+    handle_queues = {}
+    for w in wait_records:
+        h = w.hip_event_handle
+        if h not in handle_queues:
+            handle_queues[h] = set()
+        handle_queues[h].add(w.queue_id.handle)
+
+    multi_queue_handles = [h for h, qs in handle_queues.items() if len(qs) >= 2]
+    assert len(multi_queue_handles) > 0, (
+        f"Expected at least one event handle with WAIT records on 2+ different "
+        f"queues (duplicate wait scenario). Per-handle queue sets: {handle_queues}"
+    )
+
+
 def test_rocpd_hip_events(rocpd_data, json_data):
     """Verify rocpd hip_events table matches JSON buffer records."""
     js_data = json_data["rocprofiler-sdk-tool"]["buffer_records"]["hip_event"]

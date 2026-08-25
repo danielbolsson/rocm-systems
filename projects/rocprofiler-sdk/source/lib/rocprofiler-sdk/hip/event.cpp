@@ -369,20 +369,14 @@ check_deferred_wait(uint64_t hip_event_handle)
                                                ROCPROFILER_HIP_EVENT_WAIT,
                                                corr_id->internal);
 
-    auto pw            = pending_wait_t{};
-    pw.tracing_data    = std::move(tracing_data);
-    pw.callback_record = rocprofiler_callback_tracing_hip_event_data_t{
-        sizeof(rocprofiler_callback_tracing_hip_event_data_t),
-        rocprofiler_timestamp_t{0},
-        rocprofiler_timestamp_t{0},
-        event_info.agent_id,
-        event_info.queue_id,
-        hip_event_handle,
-        event_info.queue_id};
+    auto pw             = pending_wait_t{};
+    pw.tracing_data     = std::move(tracing_data);
     pw.tid              = thr_id;
     pw.internal_corr_id = corr_id->internal;
     pw.ancestor_corr_id = corr_id->ancestor;
     pw.corr_id_ref      = corr_id;
+    pw.hip_event_handle = hip_event_handle;
+    pw.source_info      = event_info;
     corr_id->add_ref_count();
     corr_id->add_kern_count();
 
@@ -462,8 +456,25 @@ lookup_coalesce_group(uint64_t hip_event_handle)
 void
 register_pending_wait(uint64_t signal_handle, pending_wait_t pw)
 {
-    get_pending_wait_map()->wlock([&](auto& map) { map.emplace(signal_handle, std::move(pw)); });
-    g_pending_wait_count.fetch_add(1, std::memory_order_release);
+    pending_wait_t replaced{};
+    get_pending_wait_map()->wlock([&](auto& map) {
+        auto it = map.find(signal_handle);
+        if(it != map.end())
+        {
+            replaced   = std::move(it->second);
+            it->second = std::move(pw);
+        }
+        else
+        {
+            map.emplace(signal_handle, std::move(pw));
+            g_pending_wait_count.fetch_add(1, std::memory_order_release);
+        }
+    });
+    if(replaced.corr_id_ref)
+    {
+        replaced.corr_id_ref->sub_kern_count();
+        replaced.corr_id_ref->sub_ref_count();
+    }
 }
 
 bool
@@ -476,17 +487,15 @@ pending_wait_t
 consume_pending_wait(uint64_t signal_handle)
 {
     auto result = pending_wait_t{};
-    bool found  = false;
     get_pending_wait_map()->wlock([&](auto& map) {
         auto it = map.find(signal_handle);
         if(it != map.end())
         {
             result = std::move(it->second);
             map.erase(it);
-            found = true;
+            g_pending_wait_count.fetch_sub(1, std::memory_order_release);
         }
     });
-    if(found) g_pending_wait_count.fetch_sub(1, std::memory_order_release);
     return result;
 }
 

@@ -104,6 +104,22 @@ main(int argc, char** argv)
     scale_kernel<<<grid_size, block_size, 0, stream1>>>(d_data, n, 0.99f);
     HIP_ASSERT(hipStreamSynchronize(stream1));
 
+    // Exercise duplicate wait: two streams wait on the same event before the
+    // first wait is consumed. Both should produce WAIT completion records
+    // without leaking correlation ID ref counts (which would hang on shutdown).
+    hipStream_t stream2 = nullptr;
+    HIP_ASSERT(hipStreamCreate(&stream2));
+
+    scale_kernel<<<grid_size * 256, block_size, 0, stream0>>>(d_data, n, 1.01f);
+    HIP_ASSERT(hipEventRecord(event0, stream0));
+    HIP_ASSERT(hipStreamWaitEvent(stream1, event0, 0));
+    HIP_ASSERT(hipStreamWaitEvent(stream2, event0, 0));
+    scale_kernel<<<grid_size, block_size, 0, stream1>>>(d_data, n, 0.99f);
+    scale_kernel<<<grid_size, block_size, 0, stream2>>>(d_data, n, 0.99f);
+    HIP_ASSERT(hipStreamSynchronize(stream1));
+    HIP_ASSERT(hipStreamSynchronize(stream2));
+    HIP_ASSERT(hipStreamDestroy(stream2));
+
     // Exercise coalescing: record a hipEventDisableTiming event multiple times
     // on the same stream with no intervening work. CLR's ShouldCoalesceMarker
     // may skip dispatching a barrier for the 2nd and 3rd records, reusing the
