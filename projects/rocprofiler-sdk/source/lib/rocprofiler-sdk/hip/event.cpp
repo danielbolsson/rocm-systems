@@ -252,14 +252,28 @@ check_coalesced_record(uint64_t hip_event_handle)
     auto group = lookup_coalesce_group(hip_event_handle);
     if(!group) return;
 
-    auto* corr_id = context::get_latest_correlation_id();
-    if(!corr_id) return;
-
     auto hip_event_tracing_data = tracing::tracing_data{};
     tracing::populate_contexts(ROCPROFILER_CALLBACK_TRACING_HIP_EVENT,
                                ROCPROFILER_BUFFER_TRACING_HIP_EVENT,
                                hip_event_tracing_data);
     if(hip_event_tracing_data.empty()) return;
+
+    auto*                    corr_id      = context::get_latest_correlation_id();
+    context::correlation_id* corr_id_self = nullptr;
+    if(!corr_id)
+    {
+        corr_id      = context::correlation_tracing_service::construct(1);
+        corr_id_self = corr_id;
+    }
+    if(!corr_id) return;
+
+    auto _corr_cleanup = common::scope_destructor{[corr_id_self]() {
+        if(corr_id_self)
+        {
+            context::pop_latest_correlation_id(corr_id_self);
+            corr_id_self->sub_ref_count();
+        }
+    }};
 
     auto thr_id = corr_id->thread_idx;
     tracing::populate_external_correlation_ids(hip_event_tracing_data.external_correlation_ids,
@@ -316,34 +330,49 @@ check_coalesced_record(uint64_t hip_event_handle)
     }
 }
 
-template <typename ApiTag, typename RetT>
-auto event_record_wrapper(RetT (*next)(hipEvent_t, hipStream_t))
+using event_record_fn_t            = hipError_t (*)(hipEvent_t, hipStream_t);
+using event_record_with_flags_fn_t = hipError_t (*)(hipEvent_t, hipStream_t, unsigned int);
+using stream_wait_event_fn_t       = hipError_t (*)(hipStream_t, hipEvent_t, unsigned int);
+using event_destroy_fn_t           = hipError_t (*)(hipEvent_t);
+
+struct saved_table_t
 {
-    static auto next_func = next;
-    return +[](hipEvent_t event, hipStream_t stream) -> RetT {
-        g_active_event_ctx = {
-            ROCPROFILER_HIP_EVENT_RECORD, reinterpret_cast<uint64_t>(event), false};
-        auto _cleanup = common::scope_destructor{[]() { g_active_event_ctx = {}; }};
-        auto ret      = next_func(event, stream);
-        if(ret == hipSuccess && !is_stream_capturing(stream))
-            check_coalesced_record(reinterpret_cast<uint64_t>(event));
-        return ret;
-    };
+    event_record_fn_t            hipEventRecord_fn          = nullptr;
+    event_record_fn_t            hipEventRecord_spt_fn      = nullptr;
+    event_record_with_flags_fn_t hipEventRecordWithFlags_fn = nullptr;
+    stream_wait_event_fn_t       hipStreamWaitEvent_fn      = nullptr;
+    stream_wait_event_fn_t       hipStreamWaitEvent_spt_fn  = nullptr;
+    event_destroy_fn_t           hipEventDestroy_fn         = nullptr;
+};
+
+saved_table_t&
+get_saved_table()
+{
+    static auto _v = saved_table_t{};
+    return _v;
 }
 
-template <typename ApiTag, typename RetT>
-auto event_record_with_flags_wrapper(RetT (*next)(hipEvent_t, hipStream_t, unsigned int))
+template <event_record_fn_t saved_table_t::*SavedField>
+hipError_t
+event_record_impl(hipEvent_t event, hipStream_t stream)
 {
-    static auto next_func = next;
-    return +[](hipEvent_t event, hipStream_t stream, unsigned int flags) -> RetT {
-        g_active_event_ctx = {
-            ROCPROFILER_HIP_EVENT_RECORD, reinterpret_cast<uint64_t>(event), false};
-        auto _cleanup = common::scope_destructor{[]() { g_active_event_ctx = {}; }};
-        auto ret      = next_func(event, stream, flags);
-        if(ret == hipSuccess && !is_stream_capturing(stream))
-            check_coalesced_record(reinterpret_cast<uint64_t>(event));
-        return ret;
-    };
+    g_active_event_ctx = {ROCPROFILER_HIP_EVENT_RECORD, reinterpret_cast<uint64_t>(event), false};
+    auto _cleanup      = common::scope_destructor{[]() { g_active_event_ctx = {}; }};
+    auto ret           = (get_saved_table().*SavedField)(event, stream);
+    if(ret == hipSuccess && !is_stream_capturing(stream))
+        check_coalesced_record(reinterpret_cast<uint64_t>(event));
+    return ret;
+}
+
+hipError_t
+event_record_with_flags_impl(hipEvent_t event, hipStream_t stream, unsigned int flags)
+{
+    g_active_event_ctx = {ROCPROFILER_HIP_EVENT_RECORD, reinterpret_cast<uint64_t>(event), false};
+    auto _cleanup      = common::scope_destructor{[]() { g_active_event_ctx = {}; }};
+    auto ret           = get_saved_table().hipEventRecordWithFlags_fn(event, stream, flags);
+    if(ret == hipSuccess && !is_stream_capturing(stream))
+        check_coalesced_record(reinterpret_cast<uint64_t>(event));
+    return ret;
 }
 
 void
@@ -354,13 +383,27 @@ check_deferred_wait(uint64_t hip_event_handle)
     auto event_info = lookup_event_info(hip_event_handle);
     if(event_info.original_signal == 0) return;
 
-    auto* corr_id = context::get_latest_correlation_id();
-    if(!corr_id) return;
-
     auto tracing_data = tracing::tracing_data{};
     tracing::populate_contexts(
         ROCPROFILER_CALLBACK_TRACING_HIP_EVENT, ROCPROFILER_BUFFER_TRACING_HIP_EVENT, tracing_data);
     if(tracing_data.empty()) return;
+
+    auto*                    corr_id      = context::get_latest_correlation_id();
+    context::correlation_id* corr_id_self = nullptr;
+    if(!corr_id)
+    {
+        corr_id      = context::correlation_tracing_service::construct(1);
+        corr_id_self = corr_id;
+    }
+    if(!corr_id) return;
+
+    auto _corr_cleanup = common::scope_destructor{[corr_id_self]() {
+        if(corr_id_self)
+        {
+            context::pop_latest_correlation_id(corr_id_self);
+            corr_id_self->sub_ref_count();
+        }
+    }};
 
     auto thr_id = corr_id->thread_idx;
     tracing::populate_external_correlation_ids(tracing_data.external_correlation_ids,
@@ -383,17 +426,23 @@ check_deferred_wait(uint64_t hip_event_handle)
     register_pending_wait(event_info.original_signal, std::move(pw));
 }
 
-template <typename ApiTag, typename RetT>
-auto stream_wait_event_wrapper(RetT (*next)(hipStream_t, hipEvent_t, unsigned int))
+template <stream_wait_event_fn_t saved_table_t::*SavedField>
+hipError_t
+stream_wait_event_impl(hipStream_t stream, hipEvent_t event, unsigned int flags)
 {
-    static auto next_func = next;
-    return +[](hipStream_t stream, hipEvent_t event, unsigned int flags) -> RetT {
-        g_active_event_ctx = {ROCPROFILER_HIP_EVENT_WAIT, reinterpret_cast<uint64_t>(event), false};
-        auto _cleanup      = common::scope_destructor{[]() { g_active_event_ctx = {}; }};
-        auto ret           = next_func(stream, event, flags);
-        if(ret == hipSuccess) check_deferred_wait(reinterpret_cast<uint64_t>(event));
-        return ret;
-    };
+    g_active_event_ctx = {ROCPROFILER_HIP_EVENT_WAIT, reinterpret_cast<uint64_t>(event), false};
+    auto _cleanup      = common::scope_destructor{[]() { g_active_event_ctx = {}; }};
+    auto ret           = (get_saved_table().*SavedField)(stream, event, flags);
+    if(ret == hipSuccess) check_deferred_wait(reinterpret_cast<uint64_t>(event));
+    return ret;
+}
+
+hipError_t
+event_destroy_impl(hipEvent_t event)
+{
+    auto ret = get_saved_table().hipEventDestroy_fn(event);
+    if(ret == hipSuccess) erase_event_info(reinterpret_cast<uint64_t>(event));
+    return ret;
 }
 }  // namespace
 
@@ -524,48 +573,47 @@ update_table<::HipDispatchTable>(::HipDispatchTable* table)
 {
     if(table == nullptr) return;
 
-    // ABI offset 81 -- hipEventRecord_fn (step 0, always present)
-    if(table_has_entry<81>(table) && table->hipEventRecord_fn)
-        table->hipEventRecord_fn =
-            event_record_wrapper<api::hipEventRecord>(table->hipEventRecord_fn);
+    auto& saved = get_saved_table();
 
-    // ABI offset 417 -- hipEventRecord_spt_fn (step 0, always present)
-    if(table_has_entry<417>(table) && table->hipEventRecord_spt_fn)
-        table->hipEventRecord_spt_fn =
-            event_record_wrapper<api::hipEventRecord_spt>(table->hipEventRecord_spt_fn);
+    auto wrap = [&](auto& table_fn, auto& saved_fn, auto wrapper, auto abi_offset) {
+        if(common::abi::compute_table_offset(abi_offset) >= table->size) return;
+        if(!table_fn || table_fn == wrapper) return;
+        ROCP_TRACE << "hip::event wrapping table entry at ABI offset " << abi_offset;
+        saved_fn = table_fn;
+        table_fn = wrapper;
+    };
+
+    wrap(table->hipEventRecord_fn,
+         saved.hipEventRecord_fn,
+         &event_record_impl<&saved_table_t::hipEventRecord_fn>,
+         81);
+
+    wrap(table->hipEventRecord_spt_fn,
+         saved.hipEventRecord_spt_fn,
+         &event_record_impl<&saved_table_t::hipEventRecord_spt_fn>,
+         417);
 
 #if HIP_RUNTIME_API_TABLE_STEP_VERSION >= 10
-    // ABI offset 473 -- hipEventRecordWithFlags_fn (step 10+)
-    if(table_has_entry<473>(table) && table->hipEventRecordWithFlags_fn)
-        table->hipEventRecordWithFlags_fn =
-            event_record_with_flags_wrapper<api::hipEventRecordWithFlags>(
-                table->hipEventRecordWithFlags_fn);
+    wrap(table->hipEventRecordWithFlags_fn,
+         saved.hipEventRecordWithFlags_fn,
+         &event_record_with_flags_impl,
+         473);
 #endif
 
-    // ABI offset 348 -- hipStreamWaitEvent_fn (step 0, always present)
-    if(table_has_entry<348>(table) && table->hipStreamWaitEvent_fn)
-        table->hipStreamWaitEvent_fn =
-            stream_wait_event_wrapper<api::hipStreamWaitEvent>(table->hipStreamWaitEvent_fn);
+    wrap(table->hipStreamWaitEvent_fn,
+         saved.hipStreamWaitEvent_fn,
+         &stream_wait_event_impl<&saved_table_t::hipStreamWaitEvent_fn>,
+         348);
 
-    // ABI offset 414 -- hipStreamWaitEvent_spt_fn (step 0, always present)
-    if(table_has_entry<414>(table) && table->hipStreamWaitEvent_spt_fn)
-        table->hipStreamWaitEvent_spt_fn = stream_wait_event_wrapper<api::hipStreamWaitEvent_spt>(
-            table->hipStreamWaitEvent_spt_fn);
+    wrap(table->hipStreamWaitEvent_spt_fn,
+         saved.hipStreamWaitEvent_spt_fn,
+         &stream_wait_event_impl<&saved_table_t::hipStreamWaitEvent_spt_fn>,
+         414);
 
-    // ABI offset 344 -- hipStreamIsCapturing_fn (step 0, always present)
+    wrap(table->hipEventDestroy_fn, saved.hipEventDestroy_fn, &event_destroy_impl, 78);
+
     if(table_has_entry<344>(table) && table->hipStreamIsCapturing_fn)
         g_original_stream_is_capturing_fn = table->hipStreamIsCapturing_fn;
-
-    // ABI offset 78 -- hipEventDestroy_fn (step 0, always present)
-    if(table_has_entry<78>(table) && table->hipEventDestroy_fn)
-    {
-        static auto next_destroy_fn = table->hipEventDestroy_fn;
-        table->hipEventDestroy_fn   = +[](hipEvent_t event) -> hipError_t {
-            auto ret = next_destroy_fn(event);
-            if(ret == hipSuccess) erase_event_info(reinterpret_cast<uint64_t>(event));
-            return ret;
-        };
-    }
 }
 
 }  // namespace event
