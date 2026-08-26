@@ -85,6 +85,50 @@ def test_no_hip_api_cross_stream(json_data):
     assert len(cross_stream) > 0, "No cross-stream WAIT records found"
 
 
+def test_no_hip_api_no_same_stream_wait(json_data):
+    """Verify same-stream waits do not produce WAIT records without HIP API tracing."""
+    records = json_data["rocprofiler-sdk-tool"]["buffer_records"]["hip_event"]
+    wait_records = [r for r in records if r.operation == HIP_EVENT_WAIT]
+
+    same_stream_waits = [
+        r for r in wait_records if r.queue_id.handle == r.source_queue_id.handle
+    ]
+    assert (
+        len(same_stream_waits) == 0
+    ), f"Found {len(same_stream_waits)} same-stream WAIT records"
+
+
+def test_no_hip_api_destroy_cleanup(json_data):
+    """Verify destroy with pending wait does not leak without HIP API tracing."""
+    records = json_data["rocprofiler-sdk-tool"]["buffer_records"]["hip_event"]
+
+    record_handles = set(
+        r.hip_event_handle for r in records if r.operation == HIP_EVENT_RECORD
+    )
+    wait_handles = set(
+        r.hip_event_handle for r in records if r.operation == HIP_EVENT_WAIT
+    )
+
+    record_only = record_handles - wait_handles
+    assert len(record_only) >= 1, (
+        f"Expected at least one event handle with RECORD but no WAIT completions "
+        f"(destroy_event scenario). Found {len(record_only)}: {record_only}"
+    )
+
+
+def test_no_hip_api_graph_capture_exclusion(json_data):
+    """Verify graph capture records are excluded without HIP API tracing."""
+    records = json_data["rocprofiler-sdk-tool"]["buffer_records"]["hip_event"]
+
+    record_handles = set(
+        r.hip_event_handle for r in records if r.operation == HIP_EVENT_RECORD
+    )
+
+    assert (
+        len(record_handles) == 4
+    ), f"Expected 4 unique RECORD handles, found {len(record_handles)}"
+
+
 if __name__ == "__main__":
     exit_code = pytest.main(["-x", __file__] + sys.argv[1:])
     sys.exit(exit_code)
