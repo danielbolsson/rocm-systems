@@ -3197,6 +3197,89 @@ try:
     amdsmi_get_gpu_device_cuid.argtypes = [amdsmi_processor_handle, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_char)]
 except AttributeError:
     pass
+
+# values for enumeration 'amdsmi_cuid_source_t'
+amdsmi_cuid_source_t__enumvalues = {
+    0: 'AMDSMI_CUID_SOURCE_UNKNOWN',
+    1: 'AMDSMI_CUID_SOURCE_DRIVER',
+    2: 'AMDSMI_CUID_SOURCE_STORE',
+    3: 'AMDSMI_CUID_SOURCE_LIBRARY',
+}
+AMDSMI_CUID_SOURCE_UNKNOWN = 0
+AMDSMI_CUID_SOURCE_DRIVER = 1
+AMDSMI_CUID_SOURCE_STORE = 2
+AMDSMI_CUID_SOURCE_LIBRARY = 3
+amdsmi_cuid_source_t = ctypes.c_uint32
+
+# values for enumeration 'amdsmi_cuid_component_type_t'
+amdsmi_cuid_component_type_t__enumvalues = {
+    0: 'AMDSMI_CUID_COMPONENT_PLATFORM',
+    1: 'AMDSMI_CUID_COMPONENT_CPU',
+    2: 'AMDSMI_CUID_COMPONENT_GPU',
+    3: 'AMDSMI_CUID_COMPONENT_NIC',
+    4: 'AMDSMI_CUID_COMPONENT_NPU',
+    255: 'AMDSMI_CUID_COMPONENT_UNKNOWN',
+}
+AMDSMI_CUID_COMPONENT_PLATFORM = 0
+AMDSMI_CUID_COMPONENT_CPU = 1
+AMDSMI_CUID_COMPONENT_GPU = 2
+AMDSMI_CUID_COMPONENT_NIC = 3
+AMDSMI_CUID_COMPONENT_NPU = 4
+AMDSMI_CUID_COMPONENT_UNKNOWN = 255
+amdsmi_cuid_component_type_t = ctypes.c_uint32
+
+AMDSMI_CUID_SEED_SIZE = 32
+AMDSMI_CUID_SEED_FINGERPRINT_SIZE = 8
+
+class struct_amdsmi_cuid_info_t(Structure):
+    pass
+
+struct_amdsmi_cuid_info_t._pack_ = 1 # source:False
+struct_amdsmi_cuid_info_t._layout_ = 'ms'
+struct_amdsmi_cuid_info_t._fields_ = [
+    ('primary', ctypes.c_char * 38),
+    ('derived', ctypes.c_char * 38),
+    ('component_type', amdsmi_cuid_component_type_t),
+    ('source', amdsmi_cuid_source_t),
+    ('auxiliary', ctypes.c_ubyte),
+    ('reserved_flags', ctypes.c_ubyte * 7),
+    ('reserved', ctypes.c_uint64 * 8),
+]
+
+amdsmi_cuid_info_t = struct_amdsmi_cuid_info_t
+
+class struct_amdsmi_cuid_seed_info_t(Structure):
+    pass
+
+struct_amdsmi_cuid_seed_info_t._pack_ = 1 # source:False
+struct_amdsmi_cuid_seed_info_t._layout_ = 'ms'
+struct_amdsmi_cuid_seed_info_t._fields_ = [
+    ('provisioned', ctypes.c_ubyte),
+    ('reserved_flags', ctypes.c_ubyte * 7),
+    ('fingerprint', ctypes.c_ubyte * 8),
+    ('reserved', ctypes.c_uint64 * 4),
+]
+
+amdsmi_cuid_seed_info_t = struct_amdsmi_cuid_seed_info_t
+
+try:
+    amdsmi_get_gpu_cuid_info = _libraries['libamd_smi.so'].amdsmi_get_gpu_cuid_info
+    amdsmi_get_gpu_cuid_info.restype = amdsmi_status_t
+    amdsmi_get_gpu_cuid_info.argtypes = [amdsmi_processor_handle, ctypes.POINTER(struct_amdsmi_cuid_info_t)]
+except AttributeError:
+    pass
+try:
+    amdsmi_set_cuid_seed = _libraries['libamd_smi.so'].amdsmi_set_cuid_seed
+    amdsmi_set_cuid_seed.restype = amdsmi_status_t
+    amdsmi_set_cuid_seed.argtypes = [ctypes.POINTER(ctypes.c_ubyte)]
+except AttributeError:
+    pass
+try:
+    amdsmi_get_cuid_seed_info = _libraries['libamd_smi.so'].amdsmi_get_cuid_seed_info
+    amdsmi_get_cuid_seed_info.restype = amdsmi_status_t
+    amdsmi_get_cuid_seed_info.argtypes = [ctypes.POINTER(struct_amdsmi_cuid_seed_info_t)]
+except AttributeError:
+    pass
 try:
     amdsmi_get_gpu_enumeration_info = _libraries['libamd_smi.so'].amdsmi_get_gpu_enumeration_info
     amdsmi_get_gpu_enumeration_info.restype = amdsmi_status_t
@@ -5347,6 +5430,10 @@ __all__ = \
     'amdsmi_get_gpu_compute_process_info_by_pid',
     'amdsmi_get_gpu_cper_entries', 'amdsmi_get_gpu_device_bdf',
     'amdsmi_get_gpu_device_cuid', 'amdsmi_get_gpu_device_uuid',
+    'amdsmi_get_gpu_cuid_info', 'amdsmi_set_cuid_seed',
+    'amdsmi_get_cuid_seed_info', 'amdsmi_cuid_info_t',
+    'amdsmi_cuid_seed_info_t', 'amdsmi_cuid_source_t',
+    'amdsmi_cuid_component_type_t',
     'amdsmi_get_gpu_driver_info', 'amdsmi_get_gpu_ecc_count',
     'amdsmi_get_gpu_ecc_enabled', 'amdsmi_get_gpu_ecc_status',
     'amdsmi_get_gpu_enumeration_info',

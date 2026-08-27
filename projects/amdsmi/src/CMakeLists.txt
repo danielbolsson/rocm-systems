@@ -128,24 +128,45 @@ message("SOVERSION: ${SO_VERSION_STRING}")
 
 add_subdirectory(nic/ai-nic/amdsmi_unified)
 
-option(BUILD_CUID "Build CUID library" OFF)
+# CUID support.
+#
+# find_package + an imported target rather than find_library + a separately
+# guessed include path: libamdcuid exports amdcuid::amdcuid, which carries its
+# own include directory and link interface, so this cannot end up with the
+# library from one install and the header from another.
+#
+# QUIET, not REQUIRED: the dependency is one-directional and optional. Where
+# libamdcuid is absent the CUID entry points are still in the ABI and return
+# AMDSMI_STATUS_NOT_SUPPORTED, so amd-smi builds on a tree that has not built
+# the CUID project.
+find_package(amdcuid CONFIG QUIET)
+
+# Defaults ON when the package is there. It used to default OFF unconditionally,
+# which meant no shipped package carried CUID support: a feature that has to be
+# asked for at build time is absent from every distribution of the tool.
+include(CMakeDependentOption)
+cmake_dependent_option(
+    BUILD_CUID
+    "Link libamdcuid and enable the CUID API"
+    ON
+    "amdcuid_FOUND"
+    OFF
+)
+
+if(BUILD_CUID AND NOT amdcuid_FOUND)
+    message(
+        FATAL_ERROR
+        "BUILD_CUID=ON but no amdcuid package was found. Install libamdcuid or "
+        "add its prefix to CMAKE_PREFIX_PATH."
+    )
+endif()
 
 if(BUILD_CUID)
-    set(ROCM_DIR_CORE "/opt/rocm/core")
-    # include CUID library
-    find_library(
-        AMDCUID_LIB
-        NAMES libamdcuid_static.a amdcuid_static
-        HINTS ${ROCM_DIR_CORE}/lib ${CMAKE_PREFIX_PATH}
-        REQUIRED
-    )
-    find_path(
-        AMDCUID_INCLUDE_DIR
-        NAMES amd_cuid.h
-        HINTS ${ROCM_DIR_CORE}/include/amdcuid ${CMAKE_PREFIX_PATH}/include/amdcuid
-        REQUIRED
-    )
-endif(BUILD_CUID)
+    message(STATUS "CUID support: enabled (amdcuid ${amdcuid_VERSION})")
+else()
+    message(STATUS "CUID support: disabled (amdcuid package not found)")
+endif()
+
 #
 #   --- When BUILD_BOTH_LIBS: build shared and static; tests/examples link to static ---
 #   Otherwise: build one library (BUILD_SHARED_LIBS).
@@ -209,9 +230,10 @@ function(amdsmi_configure_common_target _TARGET)
     )
 
     if(BUILD_CUID)
+        # The imported target brings its own include directory with it, so
+        # there is no path to name here and no way for the two to disagree.
         target_compile_definitions(${_TARGET} PRIVATE BUILD_CUID)
-        target_link_libraries(${_TARGET} PRIVATE ${AMDCUID_LIB})
-        target_include_directories(${_TARGET} PRIVATE ${AMDCUID_INCLUDE_DIR})
+        target_link_libraries(${_TARGET} PRIVATE amdcuid::amdcuid)
     endif()
 
     target_link_directories(${_TARGET} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/nic/ai-nic/amdsmi_unified/build/)

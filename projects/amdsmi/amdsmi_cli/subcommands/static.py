@@ -101,6 +101,8 @@ class StaticCommands:
         multiple_devices=False,
         gpu=None,
         asic=None,
+        cuid=None,
+        cuid_primary=None,
         bus=None,
         vbios=None,
         limit=None,
@@ -130,6 +132,9 @@ class StaticCommands:
             multiple_devices (bool, optional): True if checking for multiple devices. Defaults to False.
             gpu (device_handle, optional): device_handle for target device. Defaults to None.
             asic (bool, optional): Value override for args.asic. Defaults to None.
+            cuid (bool, optional): Value override for args.cuid. Defaults to None.
+            cuid_primary (bool, optional): Value override for args.cuid_primary.
+                Defaults to None.
             bus (bool, optional): Value override for args.bus. Defaults to None.
             vbios (bool, optional): Value override for args.vbios. Defaults to None.
             limit (bool, optional): Value override for args.limit. Defaults to None.
@@ -154,6 +159,10 @@ class StaticCommands:
             args.gpu = gpu
         if asic:
             args.asic = asic
+        if cuid:
+            args.cuid = cuid
+        if cuid_primary:
+            args.cuid_primary = cuid_primary
         if bus:
             args.bus = bus
         if vbios:
@@ -184,6 +193,7 @@ class StaticCommands:
         # Store args that are applicable to the current platform (default arguments)
         current_platform_args = [
             "asic",
+            "cuid",
             "bus",
             "vbios",
             "driver",
@@ -197,6 +207,7 @@ class StaticCommands:
         ]
         current_platform_values = [
             args.asic,
+            args.cuid,
             args.bus,
             args.vbios,
             args.driver,
@@ -308,6 +319,48 @@ class StaticCommands:
                 logging.debug("Failed to get asic info for gpu %s | %s", gpu_id, e.get_error_info())
 
             static_dict["asic"] = asic_dict
+        if args.cuid:
+            # Absence is reported, not omitted: a field that disappears is
+            # indistinguishable from a parsing failure to a script.
+            cuid_dict = {
+                "derived_cuid": "N/A",
+                "component_type": "N/A",
+                "auxiliary": "N/A",
+                "source": "N/A",
+                "seed_provisioned": "N/A",
+                "seed_fingerprint": "N/A",
+            }
+
+            try:
+                cuid_info = amdsmi_interface.amdsmi_get_gpu_cuid_info(args.gpu)
+                cuid_dict["derived_cuid"] = cuid_info["derived"]
+                cuid_dict["component_type"] = cuid_info["component_type"]
+                cuid_dict["auxiliary"] = cuid_info["auxiliary"]
+                cuid_dict["source"] = cuid_info["source"]
+
+                # The primary embeds the device serial number and amd-smi static
+                # output routinely ends up in public bug reports, so it is shown
+                # only when it is asked for and only when the caller could read
+                # it.
+                if args.cuid_primary:
+                    cuid_dict["primary_cuid"] = (
+                        cuid_info["primary"] if cuid_info["primary"] else "N/A (requires root)"
+                    )
+            except amdsmi_exception.AmdSmiLibraryException as e:
+                logging.debug("Failed to get cuid info for gpu %s | %s", gpu_id, e.get_error_info())
+
+            # Node-wide, but reported here because it is the context the derived
+            # CUID above only means anything in: an unprovisioned node's derived
+            # CUIDs are keyed with a public placeholder and are reproducible by
+            # anyone.
+            try:
+                seed_info = amdsmi_interface.amdsmi_get_cuid_seed_info()
+                cuid_dict["seed_provisioned"] = seed_info["provisioned"]
+                cuid_dict["seed_fingerprint"] = seed_info["fingerprint"]
+            except amdsmi_exception.AmdSmiLibraryException as e:
+                logging.debug("Failed to get cuid seed info | %s", e.get_error_info())
+
+            static_dict["cuid"] = cuid_dict
         if args.bus:
             bus_info = {
                 "bdf": "N/A",

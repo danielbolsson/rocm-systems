@@ -1923,6 +1923,42 @@ class SetValueCommands:
             self.logger.clear_multiple_devices_output()
             return
 
+    def _set_cuid_seed(self, source):
+        """Provision the node-wide CUID derivation seed.
+
+        `source` is a path, or "-" for standard input. The seed is never taken
+        from a command-line argument: an argument is visible in
+        /proc/<pid>/cmdline to every user on the machine for the lifetime of the
+        process, and lands in the invoking user's shell history.
+        """
+        seed_size = amdsmi_interface.AMDSMI_CUID_SEED_SIZE
+
+        if source == "-":
+            seed = sys.stdin.buffer.read()
+        else:
+            try:
+                with open(source, "rb") as handle:
+                    seed = handle.read()
+            except OSError as e:
+                raise ValueError(f"Cannot read CUID seed from {source}: {e.strerror}") from e
+
+        if len(seed) != seed_size:
+            # Length is checked here as well as in the library so that the error
+            # names the file. A wrong-sized seed is corruption, not a shorter
+            # secret: accepting one silently would change every derived CUID on
+            # the machine with nothing in the values to show it.
+            raise ValueError(
+                f"CUID seed must be exactly {seed_size} bytes, got {len(seed)} from {source}"
+            )
+
+        amdsmi_interface.amdsmi_set_cuid_seed(seed)
+
+        seed_info = amdsmi_interface.amdsmi_get_cuid_seed_info()
+        # The fingerprint, never the seed: this output gets pasted into tickets.
+        self.logger.output["cuid_seed_provisioned"] = seed_info["provisioned"]
+        self.logger.output["cuid_seed_fingerprint"] = seed_info["fingerprint"]
+        self.logger.print_output()
+
     def set_value(
         self,
         args,
@@ -2058,6 +2094,14 @@ class SetValueCommands:
                 return
 
         # Check if a GPU argument has been set
+        # The CUID derivation seed is node-scoped, not per-device: one seed keys
+        # every derived CUID on the machine. It is handled here, ahead of the
+        # GPU/CPU/CORE dispatch, because that dispatch exists to pick a device
+        # and this action does not have one.
+        if getattr(args, "cuid_seed", None):
+            self._set_cuid_seed(args.cuid_seed)
+            return
+
         gpu_args_enabled = False
         gpu_attributes = [
             "fan",
