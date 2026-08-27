@@ -2891,7 +2891,12 @@ def amdsmi_get_cuid_seed_info() -> Dict[str, Any]:
                 seed in use, as lowercase hex.
 
     Raises:
-        AmdSmiLibraryException: If the library reports an error.
+        AmdSmiLibraryException: If the library reports an error. In particular
+            AMDSMI_STATUS_NO_PERM when the seed store exists but this caller
+            cannot read it. That is not an unprovisioned node -- it is a node
+            whose state this caller is not entitled to see, and treating it as
+            unprovisioned would report the public fallback seed's fingerprint
+            for a node that carries a secret.
     """
     info = amdsmi_wrapper.amdsmi_cuid_seed_info_t()
     _check_res(amdsmi_wrapper.amdsmi_get_cuid_seed_info(ctypes.byref(info)))

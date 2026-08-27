@@ -144,14 +144,16 @@ find_package(amdcuid CONFIG QUIET)
 # Defaults ON when the package is there. It used to default OFF unconditionally,
 # which meant no shipped package carried CUID support: a feature that has to be
 # asked for at build time is absent from every distribution of the tool.
-include(CMakeDependentOption)
-cmake_dependent_option(
-    BUILD_CUID
-    "Link libamdcuid and enable the CUID API"
-    ON
-    "amdcuid_FOUND"
-    OFF
-)
+#
+# A plain option() defaulted from amdcuid_FOUND, not cmake_dependent_option:
+# when its condition is false, cmake_dependent_option sets a *normal* variable
+# to the force value, which shadows the cache entry the user set on the command
+# line. `-DBUILD_CUID=ON` on a tree with no libamdcuid therefore left
+# BUILD_CUID=OFF in every subsequent if(), so the diagnostic below could not
+# fire and an explicit request for CUID support silently produced a build
+# without it. option() leaves the user's value visible, so an explicit request
+# fails loudly while an unset one still follows the package.
+option(BUILD_CUID "Link libamdcuid and enable the CUID API" "${amdcuid_FOUND}")
 
 if(BUILD_CUID AND NOT amdcuid_FOUND)
     message(
@@ -163,6 +165,8 @@ endif()
 
 if(BUILD_CUID)
     message(STATUS "CUID support: enabled (amdcuid ${amdcuid_VERSION})")
+elseif(amdcuid_FOUND)
+    message(STATUS "CUID support: disabled (BUILD_CUID=OFF)")
 else()
     message(STATUS "CUID support: disabled (amdcuid package not found)")
 endif()

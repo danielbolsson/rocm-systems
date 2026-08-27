@@ -1345,25 +1345,56 @@ amdsmi_status_t cuid_handle_for(amdsmi_processor_handle processor_handle, std::s
   return AMDSMI_STATUS_SUCCESS;
 }
 
+// Sysfs mount point for the driver-published CUID attributes. Overridable with
+// AMDSMI_CUID_SYSFS_ROOT so the driver-sourced branch below can be exercised on
+// a machine whose driver publishes nothing, in the same spirit as
+// AMDSMI_TTM_SYSFS_NAME. Diagnostic only: it changes what this file believes
+// the driver published, not what libamdcuid actually read.
+std::string cuid_sysfs_root() {
+  // getenv races only against setenv, which this library never calls.
+  // NOLINTNEXTLINE(concurrency-mt-unsafe)
+  const char* override_env = std::getenv("AMDSMI_CUID_SYSFS_ROOT");
+  if (override_env != nullptr && override_env[0] != '\0') {
+    return override_env;
+  }
+  return "/sys";
+}
+
 // Which stage of the staged lookup answered. The value itself does not say, and
 // it matters: only the driver reads the privileged identity, so only a
 // driver-sourced CUID is authoritative. A locally computed one may still be
 // built from a genuine serial -- that is what the auxiliary flag reports -- but
 // it is a second computation of something the kernel owns.
+//
+// Only the driver stage is observable from out here, and it is observable
+// exactly: libamdcuid's derived lookup opens
+// /sys/bus/pci/devices/<bdf>/cuid_secondary first and returns its contents
+// verbatim when that succeeds, so the attribute's presence under this device's
+// own sysfs directory is a fact about this device.
+//
+// The other two stages are not observable. The library consults its record
+// store, and when the store has nothing it computes the value and writes the
+// result back to that same store -- so an entry for this device means only that
+// something has looked it up before, not that the store is what answered this
+// call. Which of the two answered is a fact about the inside of one library
+// call and the library does not report it.
+//
+// This used to guess: `access("/tmp/cuid", R_OK) == 0` meant STORE. That file
+// is one global file for every device, written by any earlier lookup of any
+// device, and its path is the unprivileged store -- a root caller reads
+// /tmp/priv_cuid. Every GPU on any machine where it happened to exist was
+// reported as store-sourced, including one whose value had just been computed.
+// A fabricated provenance is worse than an absent one, so the honest answer
+// here is UNKNOWN until libamdcuid reports the stage it answered from.
 amdsmi_cuid_source_t cuid_source_for(const std::string& bdf) {
   if (bdf.empty()) {
     return AMDSMI_CUID_SOURCE_UNKNOWN;
   }
-  const std::string attr = "/sys/bus/pci/devices/" + bdf + "/cuid_secondary";
+  const std::string attr = cuid_sysfs_root() + "/bus/pci/devices/" + bdf + "/cuid_secondary";
   if (access(attr.c_str(), F_OK) == 0) {
     return AMDSMI_CUID_SOURCE_DRIVER;
   }
-  // The record store is consulted before the library computes anything, so its
-  // presence for this device is what distinguishes stage 2 from stage 3.
-  if (access("/tmp/cuid", R_OK) == 0) {
-    return AMDSMI_CUID_SOURCE_STORE;
-  }
-  return AMDSMI_CUID_SOURCE_LIBRARY;
+  return AMDSMI_CUID_SOURCE_UNKNOWN;
 }
 
 void copy_cuid_string(const amdcuid_id_t& id, char* out, size_t out_size) {
@@ -1475,8 +1506,25 @@ amdsmi_status_t amdsmi_get_cuid_seed_info(amdsmi_cuid_seed_info_t* info) {
 
 #ifdef BUILD_CUID
   amdcuid_key_info_t key_info = {};
-  if (amdcuid_get_key_info(&key_info) != AMDCUID_STATUS_SUCCESS) {
-    return AMDSMI_STATUS_API_FAILED;
+  const amdcuid_status_t status = amdcuid_get_key_info(&key_info);
+  switch (status) {
+    case AMDCUID_STATUS_SUCCESS:
+      break;
+    case AMDCUID_STATUS_PERMISSION_DENIED:
+      // The key store exists but this caller cannot open it: the node is
+      // provisioned and the answer is unavailable, not absent. Flattening this
+      // into API_FAILED -- which this did -- costs the caller the one
+      // distinction that makes the failure actionable, and is the same
+      // conflation one layer up that made an unprivileged caller on a
+      // provisioned node report itself unprovisioned with the public fallback
+      // seed's fingerprint.
+      return AMDSMI_STATUS_NO_PERM;
+    case AMDCUID_STATUS_INVALID_ARGUMENT:
+      return AMDSMI_STATUS_INVAL;
+    default:
+      // A key store that exists and is not a key. Corruption, and a different
+      // thing to ask an operator to do about it.
+      return AMDSMI_STATUS_API_FAILED;
   }
   info->provisioned = key_info.provisioned;
   static_assert(sizeof(info->fingerprint) == sizeof(key_info.fingerprint),

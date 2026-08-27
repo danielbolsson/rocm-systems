@@ -3510,6 +3510,18 @@ amdsmi_status_t amdsmi_get_gpu_device_cuid(amdsmi_processor_handle processor_han
  *  driver-sourced value is authoritative. A locally computed CUID may still be
  *  built from a genuine serial - that is what ::amdsmi_cuid_info_t::auxiliary
  *  reports - but it is a second computation of something the kernel owns.
+ *
+ *  Of these, amd-smi can currently determine only ::AMDSMI_CUID_SOURCE_DRIVER,
+ *  and reports ::AMDSMI_CUID_SOURCE_UNKNOWN for the other two. The driver stage
+ *  is observable from outside the CUID library - the attribute is published
+ *  under the device's own sysfs directory - while the store and the library's
+ *  own computation are not: the library writes a computed value back into the
+ *  same store it consults, so nothing outside one library call can tell which
+ *  of the two produced the value. ::AMDSMI_CUID_SOURCE_STORE and
+ *  ::AMDSMI_CUID_SOURCE_LIBRARY remain defined, and will be reported once
+ *  libamdcuid reports the stage that answered; a caller must treat
+ *  ::AMDSMI_CUID_SOURCE_UNKNOWN as "not known to be driver-published" rather
+ *  than as "locally computed".
  */
 typedef enum {
   AMDSMI_CUID_SOURCE_UNKNOWN = 0,  //!< Source could not be determined
@@ -3638,13 +3650,22 @@ amdsmi_status_t amdsmi_set_cuid_seed(const uint8_t seed[AMDSMI_CUID_SEED_SIZE]);
  *
  *  Never returns the seed. See ::amdsmi_cuid_seed_info_t.
  *
+ *  A node with no provisioned seed is a success, not a failure: it reports
+ *  `provisioned = 0` and the fingerprint of the public canonical fallback seed.
+ *  That is distinct from a seed store this caller is not allowed to read, which
+ *  is reported as ::AMDSMI_STATUS_NO_PERM and reports no state at all -- the
+ *  node may well be provisioned, and answering "unprovisioned" for it would be
+ *  a wrong answer rather than a missing one.
+ *
  *  @platform{gpu_bm_linux}
  *
  *  @param[out] info Pointer to an ::amdsmi_cuid_seed_info_t allocated by the
- *              caller
+ *              caller. Left zeroed on any failure.
  *
  *  @return ::amdsmi_status_t | ::AMDSMI_STATUS_SUCCESS on success,
- *          ::AMDSMI_STATUS_NOT_SUPPORTED when built without CUID support
+ *          ::AMDSMI_STATUS_NO_PERM when the seed store exists but this caller
+ *          cannot read it, ::AMDSMI_STATUS_NOT_SUPPORTED when built without
+ *          CUID support, ::AMDSMI_STATUS_API_FAILED when the store is unusable
  */
 amdsmi_status_t amdsmi_get_cuid_seed_info(amdsmi_cuid_seed_info_t* info);
 

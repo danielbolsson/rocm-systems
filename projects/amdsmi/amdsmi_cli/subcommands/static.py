@@ -358,6 +358,15 @@ class StaticCommands:
                 cuid_dict["seed_provisioned"] = seed_info["provisioned"]
                 cuid_dict["seed_fingerprint"] = seed_info["fingerprint"]
             except amdsmi_exception.AmdSmiLibraryException as e:
+                # A seed store this caller cannot read is a provisioned node
+                # whose state is unavailable, not an unprovisioned one. Say
+                # which, the same way the primary CUID above does: dropping the
+                # fields entirely leaves an operator unable to tell "this node
+                # has no seed" from "you need root to see it", and those call
+                # for different next steps.
+                if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
+                    cuid_dict["seed_provisioned"] = "N/A (requires root)"
+                    cuid_dict["seed_fingerprint"] = "N/A (requires root)"
                 logging.debug("Failed to get cuid seed info | %s", e.get_error_info())
 
             static_dict["cuid"] = cuid_dict
