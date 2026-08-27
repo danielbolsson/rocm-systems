@@ -358,10 +358,9 @@ amdcuid_status_t CuidGpu::get_hardware_fingerprint(uint64_t& fingerprint) const 
       fingerprint = 0;
       return status;
     }
-    // pcie config file is little endian, so need to convert to big endian
-    uint64_t fingerprint_value = 0;
-    std::memcpy(&fingerprint_value, fingerprint_bytes, sizeof(fingerprint_value));
-    fingerprint = PciUtil::le64_to_be64(fingerprint_value);
+    // Config space is little-endian and so is the payload, so the DSN goes in
+    // as read. See PciUtil::load_le64().
+    fingerprint = PciUtil::load_le64(fingerprint_bytes);
   } else {
     // partitioned device without unique_id file or pci config cannot get
     // fingerprint
@@ -371,65 +370,13 @@ amdcuid_status_t CuidGpu::get_hardware_fingerprint(uint64_t& fingerprint) const 
   return CuidUtilities::validate_fingerprint(fingerprint);
 }
 
-// Stage 1 of the staged lookup: ask the driver. `attribute` is one of the two
-// published CUID attributes; on success the driver's value is written into
-// `out` verbatim and its raw payload octets recovered from it, so the rest of
-// the library (field extraction, reverse lookup, the record on disk) works off
-// exactly the value the kernel handed out and never a recomputation of it.
-//
-// Returns AMDCUID_STATUS_UNSUPPORTED when the caller should fall through to the
-// later stages, which is only the case when the attribute is genuinely absent.
-// A present-but-unreadable attribute is reported as such: the kernel holds the
-// authoritative value, so producing a local one instead would manufacture the
-// divergence this whole ordering exists to prevent.
-amdcuid_status_t CuidGpu::read_driver_published(const std::string& attribute, amdcuid_id_t& out,
-                                                uint8_t raw_bits[16]) const {
-  std::string bdf;
-  if (this->get_bdf(bdf) != AMDCUID_STATUS_SUCCESS || bdf.empty()) {
-    // GIM-only devices can reach here with no BDF at all; there is nothing to
-    // look up under /sys/bus/pci/devices in that case.
-    return AMDCUID_STATUS_UNSUPPORTED;
-  }
-
-  amdcuid_id_t published = {};
-  amdcuid_status_t status = CuidUtilities::read_driver_cuid(bdf, attribute, &published);
-  switch (status) {
-    case AMDCUID_STATUS_SUCCESS:
-      out = published;
-      CuidUtilities::remove_UUIDv8_bits(&out, raw_bits);
-      return AMDCUID_STATUS_SUCCESS;
-    case AMDCUID_STATUS_FILE_NOT_FOUND:
-      // The driver does not implement the CUID interface, or found no serial
-      // for this device and so created none of the attributes. Either way there
-      // is no kernel value to defer to.
-      return AMDCUID_STATUS_UNSUPPORTED;
-    default:
-      return status;
-  }
-}
-
 amdcuid_status_t CuidGpu::get_primary_cuid(amdcuid_primary_id& id) const {
   // The driver first. Where amdgpu publishes cuid_primary it has read the
   // device serial out of privileged storage that userspace cannot reach, and
   // that value is the identity; the PCI-config-space reconstruction below is
   // only for devices whose driver publishes nothing.
   {
-    amdcuid_primary_id published = {};
-    amdcuid_status_t drv =
-        read_driver_published(CuidUtilities::kDriverPrimaryAttribute,
-                              published.UUIDv8_representation, published.raw_bits);
-    if (drv == AMDCUID_STATUS_SUCCESS) {
-      id = published;
-      return AMDCUID_STATUS_SUCCESS;
-    }
-    if (drv == AMDCUID_STATUS_PERMISSION_DENIED) {
-      // cuid_primary is gated on CAP_SYS_ADMIN because its payload embeds the
-      // raw serial. An unprivileged caller cannot have the primary at all --
-      // but it can still have the derived value, which is what
-      // get_derived_cuid() reads from cuid_secondary without coming through
-      // here.
-      return drv;
-    }
+    const amdcuid_status_t drv = driver_primary_cuid(id);
     if (drv != AMDCUID_STATUS_UNSUPPORTED) {
       return drv;
     }
@@ -485,29 +432,6 @@ amdcuid_status_t CuidGpu::get_primary_cuid(amdcuid_primary_id& id) const {
 
   id = result;
   return AMDCUID_STATUS_SUCCESS;
-}
-
-amdcuid_status_t CuidGpu::get_derived_cuid(amdcuid_derived_id& id, cuid_hmac* hmac) const {
-  // cuid_secondary is 0444, so this stage answers for an unprivileged caller
-  // even though cuid_primary above does not. That is the point of the derived
-  // value: it names the component without revealing the serial, and a tool
-  // running as an ordinary user must get the kernel's value here rather than
-  // falling through and deriving a competing one of its own.
-  amdcuid_derived_id published = {};
-  amdcuid_status_t drv = read_driver_published(CuidUtilities::kDriverSecondaryAttribute,
-                                               published.UUIDv8_representation, published.raw_bits);
-  if (drv == AMDCUID_STATUS_SUCCESS) {
-    get_hash_from_raw(published.raw_bits, published.hash);
-    id = published;
-    return AMDCUID_STATUS_SUCCESS;
-  }
-  if (drv != AMDCUID_STATUS_UNSUPPORTED) {
-    return drv;
-  }
-
-  // No driver value: fall through to the daemon/record store and then to the
-  // library's own derivation.
-  return CuidDevice::get_derived_cuid(id, hmac);
 }
 
 const amdcuid_gpu_info& CuidGpu::get_info() const { return m_info; }

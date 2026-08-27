@@ -242,9 +242,7 @@ amdcuid_status_t CuidNpu::get_hardware_fingerprint(uint64_t& fingerprint) const 
     status =
         PciUtil::read_pci_config_space(m_info.bdf, fingerprint_bytes, fingerprint_size, offset);
     if (status == AMDCUID_STATUS_SUCCESS) {
-      uint64_t fingerprint_value = 0;
-      std::memcpy(&fingerprint_value, fingerprint_bytes, fingerprint_size);
-      fingerprint = PciUtil::le64_to_be64(fingerprint_value);
+      fingerprint = PciUtil::load_le64(fingerprint_bytes);
       return CuidUtilities::validate_fingerprint(fingerprint);
     } else {
       fingerprint = 0;
@@ -256,6 +254,15 @@ amdcuid_status_t CuidNpu::get_hardware_fingerprint(uint64_t& fingerprint) const 
 }
 
 amdcuid_status_t CuidNpu::get_primary_cuid(amdcuid_primary_id& id) const {
+  // Stage 1: the driver, where it publishes a CUID for this device. The
+  // library reports what the kernel says rather than computing a rival value.
+  {
+    const amdcuid_status_t drv = driver_primary_cuid(id);
+    if (drv != AMDCUID_STATUS_UNSUPPORTED) {
+      return drv;
+    }
+  }
+
   bool temp = false;
   amdcuid_status_t status = AMDCUID_STATUS_SUCCESS;
   uint64_t fingerprint = 0;

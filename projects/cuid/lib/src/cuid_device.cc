@@ -27,8 +27,6 @@
 #include "cuid_platform.h"
 #include "cuid_util.h"
 
-namespace {
-
 // helper function to get a hash from the raw bytes of a derived ID
 void get_hash_from_raw(uint8_t raw_bytes[16], uint8_t out_hash[14]) {
   // just remove the reserved bits from the raw bytes to get the hash
@@ -44,6 +42,8 @@ void get_hash_from_raw(uint8_t raw_bytes[16], uint8_t out_hash[14]) {
   out_hash[13] = raw_bytes[14] & 0x1F;
 }
 
+namespace {
+
 void build_derived_id_from_file_entry(const CuidFileEntry& entry, amdcuid_derived_id& id) {
   id.UUIDv8_representation = entry.derived_cuid;
   CuidUtilities::remove_UUIDv8_bits(&id.UUIDv8_representation, id.raw_bits);
@@ -52,7 +52,63 @@ void build_derived_id_from_file_entry(const CuidFileEntry& entry, amdcuid_derive
 
 }  // namespace
 
+amdcuid_status_t CuidDevice::read_driver_published(const std::string& attribute, amdcuid_id_t& out,
+                                                   uint8_t raw_bits[16]) const {
+  std::string bdf;
+  if (this->get_bdf(bdf) != AMDCUID_STATUS_SUCCESS || bdf.empty()) {
+    // No BDF: a CPU, the platform, or a GIM-only device that sysfs does not
+    // enumerate. There is nothing to look up under /sys/bus/pci/devices.
+    return AMDCUID_STATUS_UNSUPPORTED;
+  }
+
+  amdcuid_id_t published = {};
+  const amdcuid_status_t status = CuidUtilities::read_driver_cuid(bdf, attribute, &published);
+  switch (status) {
+    case AMDCUID_STATUS_SUCCESS:
+      out = published;
+      CuidUtilities::remove_UUIDv8_bits(&out, raw_bits);
+      return AMDCUID_STATUS_SUCCESS;
+    case AMDCUID_STATUS_FILE_NOT_FOUND:
+      // The driver does not implement the CUID interface, or found no serial
+      // for this device and so created none of the attributes. Either way
+      // there is no kernel value to defer to.
+      return AMDCUID_STATUS_UNSUPPORTED;
+    default:
+      return status;
+  }
+}
+
+amdcuid_status_t CuidDevice::driver_primary_cuid(amdcuid_primary_id& id) const {
+  amdcuid_primary_id published = {};
+  const amdcuid_status_t drv = read_driver_published(
+      CuidUtilities::kDriverPrimaryAttribute, published.UUIDv8_representation, published.raw_bits);
+  if (drv == AMDCUID_STATUS_SUCCESS) {
+    id = published;
+  }
+  return drv;
+}
+
 amdcuid_status_t CuidDevice::get_derived_cuid(amdcuid_derived_id& id, cuid_hmac* hmac) const {
+  // cuid_secondary is 0444, so the driver stage answers for an unprivileged
+  // caller even where cuid_primary does not. That is the point of the derived
+  // value: it names the component without revealing the serial, and a tool
+  // running as an ordinary user must get the kernel's value here rather than
+  // falling through and deriving a competing one of its own.
+  {
+    amdcuid_derived_id published = {};
+    const amdcuid_status_t drv =
+        read_driver_published(CuidUtilities::kDriverSecondaryAttribute,
+                              published.UUIDv8_representation, published.raw_bits);
+    if (drv == AMDCUID_STATUS_SUCCESS) {
+      get_hash_from_raw(published.raw_bits, published.hash);
+      id = published;
+      return AMDCUID_STATUS_SUCCESS;
+    }
+    if (drv != AMDCUID_STATUS_UNSUPPORTED) {
+      return drv;
+    }
+  }
+
   // attempt to find the derived CUID in file first
   CuidFile derived_file(CuidUtilities::cuid_file(), false);
   amdcuid_status_t status = derived_file.load();

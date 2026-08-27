@@ -118,7 +118,11 @@ target_include_directories(
 # implementation of its own.
 find_package(Threads REQUIRED)
 
-target_link_libraries(${AMDCUID_TST_EXECUTABLE} amdcuid_static GTest::gtest Threads::Threads)
+# rocm-sha256 explicitly: sha256_test.cc tests that component directly, and
+# libamdcuid folds its objects in privately rather than re-exporting it, so the
+# header is not reachable through amdcuid_static. Linking it here is a no-op for
+# the symbols -- they are already in the archive -- and gets the include path.
+target_link_libraries(${AMDCUID_TST_EXECUTABLE} amdcuid_static rocm::sha256 GTest::gtest Threads::Threads)
 
 # The conformance vectors are read at run time rather than compiled in, so the
 # generator stays the single source of truth. AMDCUID_VECTORS_PATH overrides it
@@ -133,7 +137,8 @@ target_compile_definitions(
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_custom_target(
-        amdcuid_vectors_check ALL
+        amdcuid_vectors_check
+        ALL
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/vectors/cuid_vectors.py --check
         COMMENT "Checking CUID conformance vectors are up to date"
         VERBATIM

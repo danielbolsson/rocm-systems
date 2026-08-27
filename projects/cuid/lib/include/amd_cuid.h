@@ -347,6 +347,39 @@ amdcuid_status_t amdcuid_set_hash_key(const uint8_t key[32]);
  */
 amdcuid_status_t amdcuid_generate_hash_key(uint8_t key[32]);
 
+/** Length of a key fingerprint, in bytes. */
+#define AMDCUID_KEY_FINGERPRINT_SIZE 8
+
+/**
+ * @brief State of the node-wide derivation key.
+ *
+ * The key itself is deliberately absent. A consumer's operational question is
+ * whether two nodes carry the same secret, not what the secret is, and a
+ * truncated digest answers the first without answering the second.
+ */
+typedef struct {
+  /** Non-zero when a key file has been provisioned; zero when the public
+   *  canonical fallback seed is in use, in which case every derived CUID on
+   *  this node is reproducible by anyone. */
+  uint8_t provisioned;
+  uint8_t reserved[7];
+  /** First 8 octets of the unkeyed SHA-256 of the key in use. */
+  uint8_t fingerprint[AMDCUID_KEY_FINGERPRINT_SIZE];
+} amdcuid_key_info_t;
+
+/**
+ * @brief Report whether a key is provisioned, and a fingerprint of the key in
+ *        use.
+ *
+ * Never returns key material.
+ *
+ * @param[out] info Pointer to a caller-allocated ::amdcuid_key_info_t.
+ * @return AMDCUID_STATUS_SUCCESS on success,
+ *         AMDCUID_STATUS_INVALID_ARGUMENT if @p info is NULL,
+ *         AMDCUID_STATUS_KEY_ERROR if no usable key is loaded.
+ */
+amdcuid_status_t amdcuid_get_key_info(amdcuid_key_info_t* info);
+
 #ifdef __cplusplus
 }
 #endif

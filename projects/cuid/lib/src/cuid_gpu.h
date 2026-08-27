@@ -35,8 +35,6 @@ class CuidGpu : public CuidDevice {
   CuidGpu(const amdcuid_gpu_info& i);
   amdcuid_device_type_t type() const override { return AMDCUID_DEVICE_TYPE_GPU; }
   amdcuid_status_t get_primary_cuid(amdcuid_primary_id& id) const override;
-  amdcuid_status_t get_derived_cuid(amdcuid_derived_id& id,
-                                    cuid_hmac* hmac = nullptr) const override;
   amdcuid_status_t get_hardware_fingerprint(uint64_t& fingerprint) const override;
   static amdcuid_status_t discover(std::vector<DevicePtr>& gpus);
   // discover_single populates `gpu_info` from `device_path`. When the host
@@ -68,13 +66,6 @@ class CuidGpu : public CuidDevice {
   const amdcuid_gpu_info& get_info() const;
 
  private:
-  // Stage 1 of the staged lookup: read `attribute` (one of
-  // CuidUtilities::kDriverPrimaryAttribute / kDriverSecondaryAttribute) for
-  // this GPU's BDF. Returns AMDCUID_STATUS_UNSUPPORTED when the driver
-  // publishes nothing and the caller should move on to the later stages.
-  amdcuid_status_t read_driver_published(const std::string& attribute, amdcuid_id_t& out,
-                                         uint8_t raw_bits[16]) const;
-
   amdcuid_gpu_info m_info;
 };
 

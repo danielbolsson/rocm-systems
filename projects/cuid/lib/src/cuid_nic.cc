@@ -144,9 +144,7 @@ amdcuid_status_t CuidNic::get_hardware_fingerprint(uint64_t& fingerprint) const 
     status =
         PciUtil::read_pci_config_space(m_info.bdf, fingerprint_bytes, fingerprint_size, offset);
     if (status == AMDCUID_STATUS_SUCCESS) {
-      uint64_t fingerprint_value = 0;
-      std::memcpy(&fingerprint_value, fingerprint_bytes, sizeof(fingerprint_bytes));
-      fingerprint = PciUtil::le64_to_be64(fingerprint_value);
+      fingerprint = PciUtil::load_le64(fingerprint_bytes);
       if (CuidUtilities::validate_fingerprint(fingerprint) == AMDCUID_STATUS_SUCCESS) {
         return AMDCUID_STATUS_SUCCESS;
       }
@@ -179,8 +177,13 @@ amdcuid_status_t CuidNic::get_hardware_fingerprint(uint64_t& fingerprint) const 
       fingerprint = 0;
       return AMDCUID_STATUS_INVALID_FORMAT;
     }
+    // Octet 0 of the address occupies payload bits 0:7, the same orientation
+    // as every other little-endian field, rather than whatever the host's
+    // byte order happens to make of a memcpy.
     uint64_t mac_fingerprint = 0;
-    std::memcpy(&mac_fingerprint, mac_bytes, sizeof(mac_bytes));
+    for (size_t i = 0; i < sizeof(mac_bytes); ++i) {
+      mac_fingerprint |= static_cast<uint64_t>(mac_bytes[i]) << (8 * i);
+    }
     fingerprint = mac_fingerprint;
     // An all-zero MAC is an unconfigured interface, not an identity.
     return CuidUtilities::validate_fingerprint(fingerprint);
@@ -190,6 +193,15 @@ amdcuid_status_t CuidNic::get_hardware_fingerprint(uint64_t& fingerprint) const 
 }
 
 amdcuid_status_t CuidNic::get_primary_cuid(amdcuid_primary_id& id) const {
+  // Stage 1: the driver, where it publishes a CUID for this device. The
+  // library reports what the kernel says rather than computing a rival value.
+  {
+    const amdcuid_status_t drv = driver_primary_cuid(id);
+    if (drv != AMDCUID_STATUS_UNSUPPORTED) {
+      return drv;
+    }
+  }
+
   bool temp = false;
   uint64_t fingerprint = 0;
   amdcuid_status_t status = AMDCUID_STATUS_SUCCESS;

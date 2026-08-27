@@ -696,6 +696,16 @@ amdcuid_status_t amdcuid_set_hash_key(const uint8_t key[32]) {
   return global_hmac.set_hmac_key(key);
 }
 
+amdcuid_status_t amdcuid_get_key_info(amdcuid_key_info_t* info) {
+  if (!info) return AMDCUID_STATUS_INVALID_ARGUMENT;
+
+  std::memset(info, 0, sizeof(*info));
+  if (!global_hmac.is_valid()) return AMDCUID_STATUS_KEY_ERROR;
+
+  info->provisioned = global_hmac.is_using_default_key() ? 0 : 1;
+  return global_hmac.key_fingerprint(info->fingerprint);
+}
+
 amdcuid_status_t amdcuid_generate_hash_key(uint8_t key[32]) {
   if (geteuid() != 0) {
     return AMDCUID_STATUS_PERMISSION_DENIED;

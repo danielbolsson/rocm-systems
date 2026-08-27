@@ -76,7 +76,6 @@ amdcuid_status_t CuidPlatform::get_hardware_fingerprint(uint64_t& fingerprint) c
 }
 
 amdcuid_status_t CuidPlatform::get_primary_cuid(amdcuid_primary_id& id) const {
-  bool temp = false;
   // attempt to find the primary CUID in file first
   std::string cuid_file_path = CuidUtilities::priv_cuid_file();
   CuidFile primary_file(cuid_file_path, false);
@@ -113,9 +112,13 @@ amdcuid_status_t CuidPlatform::get_primary_cuid(amdcuid_primary_id& id) const {
     return status;
   }
 
-  return CuidUtilities::generate_primary_cuid(fingerprint, 0, 0, 0,
-                                              m_info.header.fields.platform.vendor_id,
-                                              AMDCUID_DEVICE_TYPE_PLATFORM, &id, temp);
+  // Component Type 0x0 and UnitID, Revision, Device and Vendor all zero. The
+  // platform is not a PCI function, so it has no vendor or device ID to put
+  // here; the SMBIOS vendor string this used to pack is a property of whoever
+  // built the machine, not an identifier of it, and packing it made two
+  // otherwise identical serial-only branches disagree between producers.
+  return CuidUtilities::generate_primary_cuid(fingerprint, 0, 0, 0, 0, AMDCUID_DEVICE_TYPE_PLATFORM,
+                                              &id, false);
 }
 
 const amdcuid_platform_info& CuidPlatform::get_info() const { return m_info; }

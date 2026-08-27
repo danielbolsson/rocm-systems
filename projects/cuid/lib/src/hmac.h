@@ -78,6 +78,13 @@ class cuid_hmac {
   // privileges to write the config directory.
   amdcuid_status_t store_key(const uint8_t key_data[key_length]);
 
+  // First 8 octets of the unkeyed SHA-256 of the key in use.
+  //
+  // Exists so that a caller can confirm two nodes carry the same seed without
+  // the seed crossing an ABI boundary. Truncated deliberately: it answers "is
+  // this the same secret" and nothing else.
+  amdcuid_status_t key_fingerprint(uint8_t out[8]) const;
+
   amdcuid_status_t generate_key(uint8_t key[key_length]);
   std::string get_key_file_path() const { return key_file_path; }
 };

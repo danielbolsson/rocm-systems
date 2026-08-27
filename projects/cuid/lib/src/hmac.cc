@@ -218,6 +218,19 @@ amdcuid_status_t cuid_hmac::generate_hmac_sha256(const uint8_t* data, size_t dat
   return AMDCUID_STATUS_SUCCESS;
 }
 
+amdcuid_status_t cuid_hmac::key_fingerprint(uint8_t out[8]) const {
+  if (!out) return AMDCUID_STATUS_INVALID_ARGUMENT;
+  if (!key || !valid) return AMDCUID_STATUS_KEY_ERROR;
+
+  uint8_t digest[32];
+  const amdcuid_status_t status = sha256_unkeyed(key, key_len, digest);
+  if (status != AMDCUID_STATUS_SUCCESS) return status;
+
+  std::memcpy(out, digest, 8);
+  rocm::sha2::secure_zero(digest, sizeof(digest));
+  return AMDCUID_STATUS_SUCCESS;
+}
+
 amdcuid_status_t cuid_hmac::set_hmac_algorithm(const char* digest_name) {
   if (!impl_) {
     std::cerr << "HMAC context is not initialized" << std::endl;
