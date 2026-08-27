@@ -569,11 +569,10 @@ amdcuid_status_t CuidUtilities::generate_derived_cuid(const amdcuid_primary_id* 
   // bit 117: temp bit carried over from primary ID
   id_bits[14] |= (primary_id->raw_bits[14] & 0x20);
 
-  // bits 118-121: reserved bits part 2 (4 bits)
-  id_bits[14] |= (reserved_2 & 0xC) << 4;  // upper 2 bits of reserved bits part 2
-  id_bits[15] |= (reserved_2 & 0x3) << 6;  // lower 2 bits of reserved bits part 2
-  // last 6 bits are padding (bits 122-127)
-  id_bits[15] &= 0xC0;
+  // bits 118-121: reserved bits part 2 (4 bits). Placed by the same helper the
+  // primary packer uses, so the two layouts cannot drift apart; bits 122-127
+  // are padding and stay zero.
+  pack_component_type_bits(reserved_2, id_bits);
 
   memcpy(derived_id->raw_bits, id_bits, 16);
 
@@ -616,18 +615,12 @@ amdcuid_status_t CuidUtilities::generate_primary_cuid(uint64_t serial_number, ui
   // Bits 112-116: UnitID part 2 (5 bits) + Bit 117: Auxiliary Value Identifier
   // (1 bit) + Bits 118-121: Component Type (4 bits)
   //
-  // The Component Type straddles the octet boundary: its low two bits are
-  // payload 118:119 (raw[14] bits 7:6) and its high two bits are payload
-  // 120:121 (raw[15] bits 1:0). Bits 122:127 are padding and stay zero.
-  //
-  // The high two bits used to be written to raw[15] bits 7:6, i.e. payload
-  // 126:127, which is padding. That rendered the Component Type modulo 4, so an
-  // NPU (0x4) came out indistinguishable from a Platform (0x0). This line and
-  // the last octet of add_UUIDv8_bits()/remove_UUIDv8_bits() must agree; fixing
-  // either alone reintroduces the collision.
+  // pack_component_type_bits() places the Component Type, which straddles the
+  // octet boundary; see the comment on it for what used to go wrong here and
+  // why the derived packer shares it. Bits 122:127 are padding and stay zero.
   uint8_t temp_bit = temp ? 1 : 0;
-  id_bits[14] = (unit_id_part2) | (temp_bit << 5) | ((type_bits & 0x3) << 6);
-  id_bits[15] = (type_bits & 0xC) >> 2;  // Bits 120-121; 122-127 are padding
+  id_bits[14] = static_cast<uint8_t>(unit_id_part2 | (temp_bit << 5));
+  pack_component_type_bits(type_bits, id_bits);
 
   memcpy(primary_id->raw_bits, id_bits, 16);
 

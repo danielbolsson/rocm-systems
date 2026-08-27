@@ -152,6 +152,24 @@ class CuidDeviceManager {
    */
   amdcuid_status_t save_registry_to_files();
 
+  /**
+   * @brief Discard every derived CUID recorded under the previous seed and
+   *        re-record the surviving devices under @p new_key.
+   *
+   * Re-keying is an administrative invalidation: a derived CUID is a keyed
+   * function of the primary, so replacing the seed replaces every derived value
+   * on the node. CuidDevice::get_derived_cuid() consults the record file before
+   * it derives anything, so a record left in place outlives the key it was
+   * computed with and the node keeps serving pre-re-key values indefinitely.
+   * The records are therefore removed before anything is recomputed, or the
+   * regenerated file would simply copy the stale values back.
+   *
+   * @param[in] new_key The 32-octet seed now in effect, or nullptr to drop the
+   *                    records without adopting a new one.
+   * @return AMDCUID_STATUS_SUCCESS on success, error code otherwise
+   */
+  amdcuid_status_t invalidate_derived_cuids(const uint8_t new_key[key_length]);
+
  private:
   CuidDeviceManager() = default;
   ~CuidDeviceManager() = default;

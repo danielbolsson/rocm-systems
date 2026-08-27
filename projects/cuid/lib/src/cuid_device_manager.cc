@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <iostream>
 
 #include "include/amd_cuid.h"
@@ -565,5 +566,44 @@ amdcuid_status_t CuidDeviceManager::save_registry_to_files() {
   // ensure new unpriv file generated is reloaded into the file object
   unpriv_cuid_file_.load();
 
+  return status;
+}
+
+amdcuid_status_t CuidDeviceManager::invalidate_derived_cuids(const uint8_t new_key[key_length]) {
+  bool have_devices = false;
+  {
+    std::lock_guard<std::mutex> lock(manager_mutex_);
+
+    // The manager derives with its own key object, loaded when it was
+    // constructed. Leaving it on the old seed would have build_cuid_index()
+    // rebuild the index with exactly the values this call exists to retire.
+    if (new_key) {
+      const amdcuid_status_t status = manager_hmac.set_hmac_key(new_key);
+      if (status != AMDCUID_STATUS_SUCCESS) {
+        return status;
+      }
+    }
+
+    // Drop the recorded association -- both the on-disk record and the copy
+    // each CuidFile holds -- before anything recomputes. get_derived_cuid()
+    // reads the record ahead of deriving, so a record left in place would be
+    // read back and written straight into the regenerated file.
+    unpriv_cuid_file_.clear();
+    priv_cuid_file_.clear();
+    std::remove(unpriv_cuid_file_.get_file_path().c_str());
+    std::remove(priv_cuid_file_.get_file_path().c_str());
+    cuid_index_.clear();
+    have_devices = !devices_.empty();
+  }
+
+  // With the records gone every lookup now recomputes under the new seed, so
+  // the invalidation itself is complete. Re-record the association where there
+  // are devices to record it for: the derived CUID a consumer was handed before
+  // the re-key is only traceable to its component while the store names both.
+  if (!have_devices) {
+    return AMDCUID_STATUS_SUCCESS;
+  }
+  const amdcuid_status_t status = save_registry_to_files();
+  build_cuid_index();
   return status;
 }

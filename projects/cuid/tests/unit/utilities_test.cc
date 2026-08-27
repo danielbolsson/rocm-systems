@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "src/cuid_util.h"
+#include "src/hmac.h"
 
 TestUtilities::TestUtilities() {
   SetTitle("Utilities");
@@ -83,6 +84,76 @@ TEST(cuidtstUnprivileged, AdoptedFirmwareUuidIsNotConstructed) {
         << c.uuid;
     EXPECT_EQ(CuidUtilities::is_constructed(&id), c.constructed) << c.uuid;
   }
+}
+
+// Payload bits 118:121 straddle the last two octets, and the primary and the
+// derived packer both write them. They had drifted: the primary put the field's
+// high half in payload 126:127, which is padding, and after that was fixed the
+// derived packer still carried the mirror image of it -- low half into 126:127,
+// then payload 120:121 cleared outright. Nothing caught it because the derived
+// packer's field is reserved and always zero. Exercising the placement itself,
+// with the values the field will one day carry, does.
+TEST(cuidtstUnprivileged, ComponentTypeBitsLandOutsideThePadding) {
+  for (uint8_t value = 0; value < 16; ++value) {
+    uint8_t raw[16] = {0};
+    CuidUtilities::pack_component_type_bits(value, raw);
+
+    // Payload 118:119 in raw[14] bits 6:7, payload 120:121 in raw[15] bits 0:1.
+    EXPECT_EQ((raw[14] >> 6) & 0x3, value & 0x3) << "value " << static_cast<int>(value);
+    EXPECT_EQ(raw[15] & 0x3, (value >> 2) & 0x3) << "value " << static_cast<int>(value);
+
+    // Payload 122:127 is padding and must stay zero, or the value is both
+    // truncated on the way in and unrecoverable on the way out.
+    EXPECT_EQ(raw[15] & 0xFC, 0) << "value " << static_cast<int>(value);
+
+    // And the framing must give the field back. remove_UUIDv8_bits() is the
+    // only reader of these bits, so a packer that disagrees with it silently
+    // reduces the field modulo 4.
+    amdcuid_id_t framed = {{0}};
+    CuidUtilities::add_UUIDv8_bits(raw, &framed);
+    uint8_t recovered[16] = {0};
+    CuidUtilities::remove_UUIDv8_bits(&framed, recovered);
+    const uint8_t field =
+        static_cast<uint8_t>(((recovered[14] >> 6) & 0x3) | ((recovered[15] & 0x3) << 2));
+    EXPECT_EQ(field, value) << "round trip lost bits for " << static_cast<int>(value);
+  }
+
+  // Every other bit of the payload is left alone: the field is OR'd into an
+  // octet that already carries UnitID part 2 and the Auxiliary Value Identifier.
+  {
+    uint8_t raw[16] = {0};
+    raw[14] = 0x3F;  // payload 112:117 all set
+    CuidUtilities::pack_component_type_bits(0x4, raw);
+    EXPECT_EQ(raw[14] & 0x3F, 0x3F);
+    EXPECT_EQ(raw[15], 0x01);
+  }
+}
+
+// The two packers must place the field identically. A derived CUID and the
+// primary it was derived from are framed by the same reader, so a derived
+// packer that writes payload 118:121 anywhere else produces a value whose
+// reserved field cannot be read back and whose padding is not padding.
+TEST(cuidtstUnprivileged, DerivedAndPrimaryAgreeOnTheLastOctets) {
+  amdcuid_primary_id primary = {};
+  ASSERT_EQ(CuidUtilities::generate_primary_cuid(0xD3AAABD406C5349Bull, 0x1234, 0xC1, 0x73A1,
+                                                 0x1002, AMDCUID_DEVICE_TYPE_NPU, &primary, false),
+            AMDCUID_STATUS_SUCCESS);
+
+  uint8_t key[32] = {0};
+  for (size_t i = 0; i < sizeof(key); ++i) key[i] = static_cast<uint8_t>(i);
+  cuid_hmac hmac(key);
+
+  amdcuid_derived_id derived = {};
+  ASSERT_EQ(CuidUtilities::generate_derived_cuid(&primary, &derived, &hmac),
+            AMDCUID_STATUS_SUCCESS);
+
+  // Component Type 0x4 (NPU) survives in the primary: it needs both halves.
+  EXPECT_EQ(((primary.raw_bits[14] >> 6) & 0x3) | ((primary.raw_bits[15] & 0x3) << 2), 0x4);
+
+  // Payload 122:127 is padding in both. The derived packer used to write the
+  // reserved field's low half here.
+  EXPECT_EQ(primary.raw_bits[15] & 0xFC, 0);
+  EXPECT_EQ(derived.raw_bits[15] & 0xFC, 0) << "derived payload wrote into the UUID padding";
 }
 
 // The HMAC message for an adopted identifier is the firmware UUID itself, all

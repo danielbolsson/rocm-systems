@@ -32,6 +32,22 @@ namespace {
 CuidDeviceManager& mgr = CuidDeviceManager::instance();
 cuid_hmac global_hmac = cuid_hmac();
 
+// The key to hand a derivation, for a caller of this privilege.
+//
+// A privileged caller gets it. get_derived_cuid() derives only when neither the
+// driver nor the record answers, and CuidUtilities::generate_derived_cuid()
+// rejects a null key with AMDCUID_STATUS_INVALID_ARGUMENT -- so root asking for
+// a device the record names but holds no derived entry for used to get
+// INVALID_ARGUMENT out of the handle lookups, which amd-smi surfaces as
+// NOT_SUPPORTED. It has the key; there is no reason for it not to derive.
+//
+// An unprivileged caller does not, deliberately, and this is the same rule
+// AMDCUID_QUERY_DERIVED_CUID applies below: it cannot read a hardware
+// fingerprint, so deriving would build a value from an all-zero primary and
+// give every device on the machine the same CUID. It must be answered from the
+// driver or from the record, or not at all.
+cuid_hmac* derivation_key() { return geteuid() == 0 ? &global_hmac : nullptr; }
+
 }  // namespace
 
 void amdcuid_get_library_version(uint32_t* major, uint32_t* minor, uint32_t* patch) {
@@ -274,7 +290,7 @@ amdcuid_status_t amdcuid_get_handle_by_dev_path(const char* dev_path,
          (!device_real_path.empty() && device_real_path == real_dev_path)) &&
         device->type() == device_type) {
       amdcuid_derived_id derived;
-      status = device->get_derived_cuid(derived);
+      status = device->get_derived_cuid(derived, derivation_key());
       if (status != AMDCUID_STATUS_SUCCESS) {
         return status;
       }
@@ -291,7 +307,7 @@ amdcuid_status_t amdcuid_get_handle_by_dev_path(const char* dev_path,
   }
   if (status == AMDCUID_STATUS_SUCCESS) {
     amdcuid_derived_id derived;
-    status = device->get_derived_cuid(derived);
+    status = device->get_derived_cuid(derived, derivation_key());
     if (status != AMDCUID_STATUS_SUCCESS) {
       return status;
     }
@@ -341,7 +357,7 @@ amdcuid_status_t amdcuid_get_handle_by_bdf(const char* bdf, amdcuid_device_type_
     }
     if (device_bdf == bdf && device->type() == device_type) {
       amdcuid_derived_id derived;
-      status = device->get_derived_cuid(derived);
+      status = device->get_derived_cuid(derived, derivation_key());
       if (status != AMDCUID_STATUS_SUCCESS) {
         return status;
       }
@@ -355,7 +371,7 @@ amdcuid_status_t amdcuid_get_handle_by_bdf(const char* bdf, amdcuid_device_type_
   amdcuid_status_t status = mgr.get_device_from_file_by_bdf(bdf, device);
   if (status == AMDCUID_STATUS_SUCCESS) {
     amdcuid_derived_id derived;
-    status = device->get_derived_cuid(derived);
+    status = device->get_derived_cuid(derived, derivation_key());
     if (status != AMDCUID_STATUS_SUCCESS) {
       return status;
     }
@@ -693,13 +709,40 @@ amdcuid_status_t amdcuid_set_hash_key(const uint8_t key[32]) {
     return status;
   }
 
-  return global_hmac.set_hmac_key(key);
+  status = global_hmac.set_hmac_key(key);
+  if (status != AMDCUID_STATUS_SUCCESS) {
+    return status;
+  }
+
+  // Re-keying is an administrative invalidation of every derived CUID already
+  // handed out, not a routine operation, so the values recorded under the old
+  // seed have to go with it. Swapping the key alone left them in place, and
+  // because get_derived_cuid() consults the record before it derives, a node
+  // with an existing record went on serving its pre-re-key derived CUIDs for
+  // good -- the one outcome a re-key is supposed to make impossible.
+  return mgr.invalidate_derived_cuids(key);
 }
 
 amdcuid_status_t amdcuid_get_key_info(amdcuid_key_info_t* info) {
   if (!info) return AMDCUID_STATUS_INVALID_ARGUMENT;
 
   std::memset(info, 0, sizeof(*info));
+
+  // Three outcomes, three statuses, so that a caller can act on them.
+  //
+  // "No seed has been provisioned" is a successful answer: the node is keyed
+  // with the public fallback seed, info->provisioned says so, and the
+  // fingerprint is the fallback's. Reporting it as a failure would leave a
+  // caller unable to tell an unprovisioned node from a broken one.
+  //
+  // A key store that is present but unreadable is PERMISSION_DENIED. This is an
+  // unprivileged caller looking at a 0600 key file on a node that *is*
+  // provisioned, and the answer it would otherwise get -- "not provisioned",
+  // with the fallback seed's fingerprint -- is wrong rather than unavailable.
+  //
+  // Only a key store that exists and is not a key is KEY_ERROR.
+  const amdcuid_status_t store = global_hmac.key_store_status();
+  if (store != AMDCUID_STATUS_SUCCESS) return store;
   if (!global_hmac.is_valid()) return AMDCUID_STATUS_KEY_ERROR;
 
   info->provisioned = global_hmac.is_using_default_key() ? 0 : 1;

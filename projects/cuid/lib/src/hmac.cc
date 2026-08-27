@@ -112,7 +112,12 @@ struct cuid_hmac::Impl {
 };
 
 cuid_hmac::cuid_hmac()
-    : impl_(nullptr), key(nullptr), key_len(key_length), valid(false), using_default_key(false) {
+    : impl_(nullptr),
+      key(nullptr),
+      key_len(key_length),
+      valid(false),
+      using_default_key(false),
+      key_store_status_(AMDCUID_STATUS_SUCCESS) {
   // getenv races only against setenv, which this library never calls.
   // NOLINTNEXTLINE(concurrency-mt-unsafe)
   const char* env_path = std::getenv("AMDCUID_HMAC_KEY_PATH");
@@ -122,8 +127,17 @@ cuid_hmac::cuid_hmac()
 
   std::ifstream key_file_stream(key_file_path, std::ios::binary);
   if (!key_file_stream.is_open()) {
-    // No key provisioned: use the public default seed, as the kernel does,
-    // rather than failing every privileged lookup on an unprovisioned machine.
+    // Absence and inaccessibility are not the same answer. The key file is 0600
+    // root-owned, so an unprivileged caller on a provisioned node cannot open
+    // it, and conflating that with "no key has been provisioned" makes
+    // amdcuid_get_key_info() report an unprovisioned node -- with the fallback
+    // seed's fingerprint -- for a node that carries a secret. Record which it
+    // was; the default seed is adopted either way so that derivation on an
+    // unprovisioned machine keeps working, as the kernel's does.
+    struct stat st;
+    if (stat(key_file_path.c_str(), &st) == 0) {
+      key_store_status_ = AMDCUID_STATUS_PERMISSION_DENIED;
+    }
     use_default_key();
     return;
   }
@@ -136,6 +150,7 @@ cuid_hmac::cuid_hmac()
     std::cerr << "Invalid key length in " << key_file_path << " (" << file_len
               << " bytes, expected " << key_length << ")" << std::endl;
     key_file_stream.close();
+    key_store_status_ = AMDCUID_STATUS_KEY_ERROR;
     return;
   }
   key_file_stream.seekg(0, std::ios::beg);
@@ -150,6 +165,7 @@ cuid_hmac::cuid_hmac()
     delete[] key;
     key = nullptr;
     key_file_stream.close();
+    key_store_status_ = AMDCUID_STATUS_KEY_ERROR;
     return;
   }
   key_file_stream.close();
@@ -167,7 +183,12 @@ void cuid_hmac::use_default_key() {
 }
 
 cuid_hmac::cuid_hmac(uint8_t key_data[key_length])
-    : impl_(nullptr), key(nullptr), key_len(key_length), valid(false), using_default_key(false) {
+    : impl_(nullptr),
+      key(nullptr),
+      key_len(key_length),
+      valid(false),
+      using_default_key(false),
+      key_store_status_(AMDCUID_STATUS_SUCCESS) {
   impl_ = new Impl();
   impl_->digest_name = "SHA256";
 
@@ -178,7 +199,12 @@ cuid_hmac::cuid_hmac(uint8_t key_data[key_length])
 }
 
 cuid_hmac::cuid_hmac(const char* key_data, size_t len)
-    : impl_(nullptr), key(nullptr), key_len(len), valid(false), using_default_key(false) {
+    : impl_(nullptr),
+      key(nullptr),
+      key_len(len),
+      valid(false),
+      using_default_key(false),
+      key_store_status_(AMDCUID_STATUS_SUCCESS) {
   impl_ = new Impl();
   impl_->digest_name = "SHA256";
 
@@ -292,6 +318,9 @@ amdcuid_status_t cuid_hmac::store_key(const uint8_t key_data[key_length]) {
     std::remove(tmp_path.c_str());
     return AMDCUID_STATUS_KEY_ERROR;
   }
+  // Whatever was wrong with the store -- absent, unreadable, not a key -- has
+  // just been replaced by a key this process wrote and can read.
+  key_store_status_ = AMDCUID_STATUS_SUCCESS;
   return AMDCUID_STATUS_SUCCESS;
 #else
   // O_EXCL so we never write into a pre-created file; 0600 from creation.
@@ -343,6 +372,9 @@ amdcuid_status_t cuid_hmac::store_key(const uint8_t key_data[key_length]) {
     close(dir_fd);
   }
 
+  // Whatever was wrong with the store -- absent, unreadable, not a key -- has
+  // just been replaced by a key this process wrote and can read.
+  key_store_status_ = AMDCUID_STATUS_SUCCESS;
   return AMDCUID_STATUS_SUCCESS;
 #endif
 }

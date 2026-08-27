@@ -373,10 +373,22 @@ typedef struct {
  *
  * Never returns key material.
  *
+ * An unprovisioned node is a successful answer, not a failure: the node is
+ * keyed with the public canonical fallback seed, @p provisioned reports zero
+ * and @p fingerprint is the fallback's. The two failures are distinct from it
+ * and from each other, so that a caller can tell "nobody has provisioned this
+ * node" from "somebody has, and I cannot see it" from "the key store is not a
+ * key".
+ *
  * @param[out] info Pointer to a caller-allocated ::amdcuid_key_info_t.
- * @return AMDCUID_STATUS_SUCCESS on success,
+ * @return AMDCUID_STATUS_SUCCESS on success, including on an unprovisioned
+ *                                node,
  *         AMDCUID_STATUS_INVALID_ARGUMENT if @p info is NULL,
- *         AMDCUID_STATUS_KEY_ERROR if no usable key is loaded.
+ *         AMDCUID_STATUS_PERMISSION_DENIED if a key store exists but this
+ *                                caller cannot read it, which is what an
+ *                                unprivileged caller sees on a provisioned
+ *                                node,
+ *         AMDCUID_STATUS_KEY_ERROR if the key store exists and is not a key.
  */
 amdcuid_status_t amdcuid_get_key_info(amdcuid_key_info_t* info);
 

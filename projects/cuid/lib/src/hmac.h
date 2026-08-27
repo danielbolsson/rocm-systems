@@ -48,6 +48,7 @@ class cuid_hmac {
   size_t key_len;
   bool valid;
   bool using_default_key;
+  amdcuid_status_t key_store_status_;
   std::string key_file_path;
 
  public:
@@ -62,6 +63,20 @@ class cuid_hmac {
   // True when no key file was found and the public default seed is in use, so
   // a caller can distinguish a provisioned identity from an unprovisioned one.
   bool is_using_default_key() const { return using_default_key; }
+
+  // What the key store had to say, as distinct from what key ended up in use:
+  //
+  //   SUCCESS           a provisioned key was loaded, or none exists and the
+  //                     public default seed stands in for it. Both are ordinary
+  //                     states, and is_using_default_key() tells them apart.
+  //   PERMISSION_DENIED a key file exists but this caller cannot open it. The
+  //                     default seed is used so that derivation keeps working,
+  //                     but the node is provisioned and reporting it as
+  //                     unprovisioned would be a wrong answer, not a missing
+  //                     one -- the key file is 0600, so every unprivileged
+  //                     caller on a provisioned node lands here.
+  //   KEY_ERROR         a key file exists and is not a key.
+  amdcuid_status_t key_store_status() const { return key_store_status_; }
 
   amdcuid_status_t generate_hmac_sha256(const uint8_t* data, size_t data_len, uint8_t* out_hash,
                                         size_t* out_len);

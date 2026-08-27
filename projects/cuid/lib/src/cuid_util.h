@@ -108,6 +108,29 @@ amdcuid_status_t read_driver_cuid_from_path(const std::string& path, amdcuid_id_
 amdcuid_status_t read_driver_cuid(const std::string& bdf, const std::string& attribute,
                                   amdcuid_id_t* id);
 
+// Write a 4-bit field into payload bits 118:121 of a 16-octet payload, leaving
+// every other bit alone.
+//
+// The field straddles the octet boundary: its low two bits are payload 118:119,
+// which are bits 6:7 of raw[14], and its high two bits are payload 120:121,
+// which are bits 0:1 of raw[15]. Payload bits 122:127 are padding and stay
+// zero. add_UUIDv8_bits() and remove_UUIDv8_bits() frame the last octet on
+// exactly this basis.
+//
+// One helper because two packers write this field -- the primary, where it is
+// the Component Type, and the derived, where it is reserved -- and they had
+// drifted apart. The primary put the high half in raw[15] bits 7:6, i.e. in the
+// padding, which rendered the Component Type modulo 4 and made an NPU (0x4)
+// indistinguishable from a Platform (0x0); that was fixed. The derived packer
+// still had the mirror image of the same mistake, writing the field's low half
+// to payload 126:127 and then clearing 120:121. Its field is reserved and
+// therefore always zero today, which is precisely why the divergence survived,
+// and precisely why the two must not be written twice.
+inline void pack_component_type_bits(uint8_t value, uint8_t raw_bits[16]) {
+  raw_bits[14] = static_cast<uint8_t>((raw_bits[14] & 0x3F) | ((value & 0x3) << 6));
+  raw_bits[15] = static_cast<uint8_t>((raw_bits[15] & 0xFC) | ((value & 0xC) >> 2));
+}
+
 std::string read_sysfs_file(const std::string& path);
 std::string readlink_bdf(const std::string& device_path);
 std::string bdf_to_device_path(const std::string& bdf, amdcuid_device_type_t device_type);

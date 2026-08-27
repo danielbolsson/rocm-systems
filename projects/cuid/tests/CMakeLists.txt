@@ -57,7 +57,9 @@ set(TEST_SOURCES_UNIT
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/file_lock_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/gim_util_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/id_string_test.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/key_info_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/pci_util_test.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/unit/serial_precedence_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/sha256_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/status_string_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/unit/utilities_test.cc
@@ -70,6 +72,7 @@ set(TEST_SOURCES_FUNCTIONAL
     ${CMAKE_CURRENT_SOURCE_DIR}/functional/device_query_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/functional/device_refresh_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/functional/hmac_test.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/functional/rekey_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/functional/reverse_lookup_test.cc
 )
 
