@@ -159,10 +159,7 @@ inline uint64_t resolve_src_scalar64(const Wavefront &wf, int ev, int m0_ev) {
     }
     if (ev == 126)
       return wf.exec_raw();
-    // LLVM publicly models the two selectors as halves of the constant 64-bit
-    // FLAT_SCRATCH_BASE source register at this permanent revision:
-    // https://github.com/llvm/llvm-project/blob/3bcd9a803184e2d3657b9d5cc2a1773e9ce0f116/llvm/lib/Target/AMDGPU/SIRegisterInfo.td#L257-L269
-    if (ev == 230 || ev == 231)
+    if (ev == 230)
       return wf.scratch_base(); // SRC_FLAT_SCRATCH_BASE
     throw std::logic_error("Scalar register-pair selector is not resolved: " + std::to_string(ev));
   }

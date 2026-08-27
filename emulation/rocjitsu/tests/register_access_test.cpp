@@ -478,11 +478,11 @@ TEST(ScalarOperandSelectorsTest, Classifies64BitRegisterSources) {
   EXPECT_TRUE(is_src_scalar_register_pair(108));
   EXPECT_TRUE(is_src_scalar_register_pair(126));
   EXPECT_TRUE(is_src_scalar_register_pair(230));
-  EXPECT_TRUE(is_src_scalar_register_pair(231));
 
   EXPECT_FALSE(is_src_scalar_register_pair(107));
   EXPECT_FALSE(is_src_scalar_register_pair(124));
   EXPECT_FALSE(is_src_scalar_register_pair(128));
+  EXPECT_FALSE(is_src_scalar_register_pair(231));
   EXPECT_FALSE(is_src_scalar_register_pair(242));
 }
 
