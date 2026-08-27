@@ -638,6 +638,12 @@ amdcuid_status_t CuidUtilities::generate_primary_cuid(uint64_t serial_number, ui
   return AMDCUID_STATUS_SUCCESS;
 }
 
+bool CuidUtilities::is_constructed(const amdcuid_id_t* id) {
+  if (!id) return false;
+  // RFC 9562 puts the version in the high nibble of octet 6.
+  return ((id->bytes[6] >> 4) & 0x0F) == 0x8;
+}
+
 void CuidUtilities::remove_UUIDv8_bits(amdcuid_id_t* id, uint8_t out_raw_bits[16]) {
   if (!id || !out_raw_bits) {
     return;

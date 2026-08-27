@@ -236,14 +236,23 @@ amdcuid_status_t CuidDevice::is_temporary_cuid(bool* is_temp) const {
   if (!is_temp) {
     return AMDCUID_STATUS_INVALID_ARGUMENT;
   }
-  // Check the temporary bit in the primary CUID to determine if the CUID is
-  // temporary
   amdcuid_primary_id primary;
   amdcuid_status_t status = get_primary_cuid(primary);
   if (status != AMDCUID_STATUS_SUCCESS) {
     return status;
   }
-  *is_temp = primary.raw_bits[14] & 0x20;  // check the temp indicator bit in the reserved bits
+
+  // Only a constructed CUID has a payload to read the marker out of. A Platform
+  // CUID adopted verbatim from firmware does not: bit 117 of it is whatever the
+  // firmware happened to write, and reading it reports roughly half of all
+  // machines as carrying a synthesised identity. An adopted identifier is a
+  // genuine firmware identity by definition, so it is never auxiliary.
+  if (!CuidUtilities::is_constructed(&primary.UUIDv8_representation)) {
+    *is_temp = false;
+    return AMDCUID_STATUS_SUCCESS;
+  }
+
+  *is_temp = primary.raw_bits[14] & 0x20;  // the Auxiliary Value Identifier, payload bit 117
 
   return AMDCUID_STATUS_SUCCESS;
 }

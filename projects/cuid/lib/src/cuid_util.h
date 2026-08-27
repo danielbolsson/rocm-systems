@@ -122,6 +122,22 @@ amdcuid_status_t generate_primary_cuid(uint64_t serial_number, uint16_t unit_id,
                                        amdcuid_device_type_t device_type,
                                        amdcuid_primary_id* primary_id, bool temp = false);
 void remove_UUIDv8_bits(amdcuid_id_t* id, uint8_t out_raw_bits[16]);
+
+// True when `id` was constructed from the 122-bit CUID payload, and so its
+// fields can be decoded; false when it was adopted verbatim from firmware.
+//
+// The specification has two constructions, not one. Almost every CUID is built
+// from the payload layout and framed as a UUIDv8. The Platform CUID is not:
+// where the firmware supplies a system UUID, that UUID *is* the identifier,
+// used directly, and it carries whatever version and variant bits the firmware
+// wrote -- in practice 1, 3 or 4, never 8.
+//
+// The version nibble is therefore the discriminator, and it has to be checked
+// before any field is read. A firmware UUID de-framed as though it were a CUID
+// payload yields a Component Type and an Auxiliary Value Identifier decoded out
+// of bits that mean nothing: measured against real SMBIOS UUIDs that produced a
+// Platform reported as an NPU, and as auxiliary, at random.
+bool is_constructed(const amdcuid_id_t* id);
 void add_UUIDv8_bits(const uint8_t raw_bits[16], amdcuid_id_t* id);
 std::string get_cuid_as_string(const amdcuid_id_t* id);
 amdcuid_status_t uuid_string_to_uint8(const std::string& uuid_str, uint8_t* uuid);

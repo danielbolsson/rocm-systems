@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
+
 #include "src/cuid_util.h"
 
 TestUtilities::TestUtilities() {
@@ -58,3 +60,45 @@ void TestUtilities::Run() {
 void TestUtilities::DisplayTestInfo() { TestBase::DisplayTestInfo(); }
 void TestUtilities::DisplayResults() const { TestBase::DisplayResults(); }
 void TestUtilities::Close() {}
+
+// A Platform CUID adopted verbatim from firmware is not a constructed UUIDv8,
+// and none of its payload fields may be decoded. Reading them anyway reported a
+// Platform as an NPU, and as auxiliary, depending on what the firmware wrote.
+TEST(cuidtstUnprivileged, AdoptedFirmwareUuidIsNotConstructed) {
+  struct {
+    const char* uuid;
+    bool constructed;
+  } cases[] = {
+      // Real-world shaped SMBIOS system UUIDs: versions 3, 0 and 4.
+      {"4c4c4544-0037-3010-8055-b4c04f434332", false},
+      {"03000200-0400-0500-0006-000700080009", false},
+      {"aabbccdd-eeff-4011-9222-3344556677ff", false},
+      // A CUID this library constructed: conformance vector P-1.
+      {"d4abaad3-9b34-8c50-9800-028dcc084200", true},
+  };
+
+  for (const auto& c : cases) {
+    amdcuid_id_t id{};
+    ASSERT_EQ(CuidUtilities::uuid_string_to_uint8(c.uuid, id.bytes), AMDCUID_STATUS_SUCCESS)
+        << c.uuid;
+    EXPECT_EQ(CuidUtilities::is_constructed(&id), c.constructed) << c.uuid;
+  }
+}
+
+// The HMAC message for an adopted identifier is the firmware UUID itself, all
+// sixteen octets. De-framing it first drops six bits, so two platforms whose
+// system UUIDs differ only in their version and variant bits would collide.
+TEST(cuidtstUnprivileged, DeframingAnAdoptedUuidWouldLoseBits) {
+  amdcuid_id_t id{};
+  ASSERT_EQ(CuidUtilities::uuid_string_to_uint8("aabbccdd-eeff-4011-9222-3344556677ff", id.bytes),
+            AMDCUID_STATUS_SUCCESS);
+
+  uint8_t raw[16];
+  CuidUtilities::remove_UUIDv8_bits(&id, raw);
+
+  amdcuid_id_t reframed{};
+  CuidUtilities::add_UUIDv8_bits(raw, &reframed);
+
+  // Not a round trip: this is why the adopted path must not de-frame.
+  EXPECT_NE(0, std::memcmp(id.bytes, reframed.bytes, sizeof(id.bytes)));
+}

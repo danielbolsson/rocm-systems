@@ -75,6 +75,25 @@ amdcuid_status_t CuidPlatform::get_hardware_fingerprint(uint64_t& fingerprint) c
   return AMDCUID_STATUS_SUCCESS;
 }
 
+namespace {
+
+// Populate raw_bits for a Platform primary.
+//
+// An adopted firmware UUID is not a framed 122-bit payload, so de-framing it
+// with remove_UUIDv8_bits() is not the inverse of anything: it drops six of the
+// UUID's bits and shifts the rest. Two platforms whose system UUIDs differ only
+// in their version and variant bits would then de-frame to the same raw_bits
+// and derive the same secondary CUID -- a collision manufactured by the
+// producer out of an identifier the firmware had already made unique.
+//
+// raw_bits is the HMAC message, so it has to be the UUID itself, all sixteen
+// octets, exactly as firmware wrote them.
+void set_platform_raw_bits(amdcuid_primary_id& id) {
+  std::memcpy(id.raw_bits, id.UUIDv8_representation.bytes, sizeof(id.raw_bits));
+}
+
+}  // namespace
+
 amdcuid_status_t CuidPlatform::get_primary_cuid(amdcuid_primary_id& id) const {
   // attempt to find the primary CUID in file first
   std::string cuid_file_path = CuidUtilities::priv_cuid_file();
@@ -87,7 +106,7 @@ amdcuid_status_t CuidPlatform::get_primary_cuid(amdcuid_primary_id& id) const {
   amdcuid_status_t status = primary_file.find_by_device_type(AMDCUID_DEVICE_TYPE_PLATFORM, entry);
   if (status == AMDCUID_STATUS_SUCCESS) {
     id.UUIDv8_representation = entry.primary_cuid;
-    CuidUtilities::remove_UUIDv8_bits(&id.UUIDv8_representation, id.raw_bits);
+    set_platform_raw_bits(id);
     return AMDCUID_STATUS_SUCCESS;
   }
 
@@ -100,7 +119,7 @@ amdcuid_status_t CuidPlatform::get_primary_cuid(amdcuid_primary_id& id) const {
   uint8_t system_uuid[16];
   if (get_system_uuid(system_uuid)) {
     std::memcpy(id.UUIDv8_representation.bytes, system_uuid, sizeof(system_uuid));
-    CuidUtilities::remove_UUIDv8_bits(&id.UUIDv8_representation, id.raw_bits);
+    set_platform_raw_bits(id);
     return AMDCUID_STATUS_SUCCESS;
   }
 
