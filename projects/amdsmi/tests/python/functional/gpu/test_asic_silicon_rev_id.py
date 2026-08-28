@@ -99,6 +99,11 @@ class TestGpuAsicSiliconRevId(unittest.TestCase):
                 continue
 
             expected = _query_external_rev(render_node)
+            self.assertNotEqual(
+                asic_info["silicon_rev_id"],
+                "N/A",
+                f"{bdf}: silicon_rev_id is N/A but DRM reported external_rev {hex(expected)}",
+            )
             self.assertEqual(
                 int(asic_info["silicon_rev_id"], 16),
                 expected,
