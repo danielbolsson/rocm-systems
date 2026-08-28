@@ -523,15 +523,15 @@ add_executable(rccl-UnitTestsMicro
   p2p-test.cc
   rma-proxy-progress-test.cc
   group-test.cc
-  wrap-test.cc                              # rccl_wrap.cc microtests (AICOMRCCL-2195)
+  wrap-test.cc                                 # rccl_wrap.cc microtests (AICOMRCCL-2195)
   fakes/nccl_fakes.cc
   fakes/p2p_fakes.cc
   fakes/rma_fakes.cc
   fakes/comm_fakes.cc
   fakes/collective_stubs.cc
   fakes/hip_fakes.cc
-  fakes/wrap_stubs.cc                        # rccl_wrap.cc-specific fail-loud stub floor
-  ${RCCL_HIPIFY_DIR}/src/misc/archinfo.cc     # real IsArchMatch, for wrap-test.cc
+  fakes/wrap_stubs.cc                          # rccl_wrap.cc-specific fail-loud stub floor
+  ${RCCL_HIPIFY_DIR}/src/misc/archinfo.cc      # real IsArchMatch, for wrap-test.cc
   ${RCCL_TEST_DIR}/common/main_altrsmi.cpp
   ${RCCL_TEST_DIR}/common/ProcessIsolatedTestRunner.cpp
 )
