@@ -4333,9 +4333,8 @@ Runtime::MappedHandleAllowedAgent::MappedHandleAllowedAgent(MappedHandle* _mappe
      * allocation into a GPU DRM context and recorded that BO's mmap offset in
      * memHandle->driver_handle. An imported handle has no such BO. MemoryHandle(int dmabuf_fd)
      * only owns the fd. so import the dmabuf into a GPU DRM context here to obtain an offset
-     * that EnableAccess can mmap.
-     * The GPU is not arbitrary: it must be the KFD GTT anchor (libhsakmt first_gpu_mem), the
-     * same one VMemoryHandleCreate uses. On CPX+NPS2 the anchor is not the lowest DRM render
+     * that EnableAccess can mmap. The GPU must be the KFD GTT anchor (libhsakmt first_gpu_mem),
+     * the same one VMemoryHandleCreate uses. On CPX+NPS2 the anchor is not the lowest DRM render
      * minor, and importing into the wrong DRM context faults on first CPU store. */
     if (!memHandle->imported) return;
 
@@ -4407,7 +4406,7 @@ hsa_status_t Runtime::MappedHandleAllowedAgent::EnableAccess(hsa_access_permissi
 
     core::Agent* agent = nullptr;
     int mmap_fd = -1;
-    uint64_t mmap_offset = 0;
+    const DriverMemoryHandle* cpu_mmap_handle = nullptr;
 
     /* The mmap offset is only valid on the DRM fd whose context holds the BO, so the fd and the
      * offset must come from the same import. For an imported handle that is the BO the
@@ -4419,16 +4418,30 @@ hsa_status_t Runtime::MappedHandleAllowedAgent::EnableAccess(hsa_access_permissi
       agent = cpu_mmap_drm_agent;
       if (agent == nullptr) return HSA_STATUS_ERROR;
       agent->driver().GetDeviceFd(agent->node_id(), &mmap_fd);
-      mmap_offset = driver_handle.mmap_offset;
+      cpu_mmap_handle = &driver_handle;
     } else if (mappedHandle->mem_handle->region) {
       agent = mappedHandle->mem_handle->drmAgent();
       /* Do not check the return value of GetDeviceFd. We do not need mmap_fd in some cases, so it
        * is valid for mmap_fd to be -1*/
       agent->driver().GetDeviceFd(agent->node_id(), &mmap_fd);
-      mmap_offset = mappedHandle->mem_handle->driver_handle.mmap_offset;
+      cpu_mmap_handle = &mappedHandle->mem_handle->driver_handle;
     }
 
-    if (!rocr::os::MapMemory(va, size, PermissionsToMemProt(perms), mmap_fd, mmap_offset)) {
+    /* Both inputs to the mmap must be checked before use. mmap_offset is a DRM fake offset, so 0
+     * is a legal value rather than a "not set" marker: a driver whose ImportMemoryHandle never
+     * populates it (KfdVirtioDriver, for instance) would otherwise reach mmap() with offset 0 on
+     * a real DRM fd and silently map an unrelated BO instead of failing. */
+    if (cpu_mmap_handle == nullptr || !cpu_mmap_handle->mmap_offset_valid) {
+      debug_print("EnableAccess: no valid DRM mmap offset for a CPU mapping of this handle\n");
+      return HSA_STATUS_ERROR;
+    }
+    if (mmap_fd < 0) {
+      debug_print("EnableAccess: no DRM device fd for the agent holding the CPU mapping BO\n");
+      return HSA_STATUS_ERROR;
+    }
+
+    if (!rocr::os::MapMemory(va, size, PermissionsToMemProt(perms), mmap_fd,
+                             cpu_mmap_handle->mmap_offset)) {
       return HSA_STATUS_ERROR;
     }
   } else {
