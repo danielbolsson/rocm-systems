@@ -17,6 +17,8 @@ test_categories:
       - "FreshRegistrationLegacyIpcSucceedsFixture.*"
       - "RmaProxyProgressTest.*"
       - "GroupEndInternalTest.*"
+      - "WrapMicrotest.*"
+      - "WrapMicrotestIsolated.*"
     exclude_windows:
       - "*"
     labels:
