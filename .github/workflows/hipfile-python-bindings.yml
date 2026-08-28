@@ -3,6 +3,7 @@ run-name: Build and install hipFile Python bindings
 
 env:
   AIS_GHA_CMD_FILES_DOCKER_DIR: /root/github
+  AIS_BATCH_DESIGNATOR: ${{ inputs.hipfile_enable_batch && 'batch-on' || 'batch-off' }}
   AIS_INPUT_CI_IMAGE: ${{ inputs.ci_image }}
   AIS_INPUT_CXX_COMPILER: ${{ inputs.cxx_compiler }}
   AIS_INPUT_CXX_STANDARD: ${{ inputs.cxx_standard }}
@@ -37,6 +38,11 @@ on:
         description: "C++ standard the consumed packages were built with"
         required: true
         type: number
+      hipfile_enable_batch:
+        default: true
+        description: "Whether the consumed packages include batch support"
+        required: false
+        type: boolean
       platform:
         required: true
         type: string
@@ -66,7 +72,7 @@ jobs:
           echo "AIS_SAFE_COMPILER_NAME=$(echo "${AIS_INPUT_CXX_COMPILER}" | sed 's|[\+]|plus|g')" >> "${GITHUB_ENV}"
       - name: Set AIS CI container name
         run: |
-          echo "AIS_CONTAINER_NAME=${AIS_PR_NUMBER:=${GITHUB_RUN_ID}}_${GITHUB_JOB}_${AIS_INPUT_PLATFORM}_${AIS_INPUT_ROCM_VERSION}_${AIS_SAFE_COMPILER_NAME}_${AIS_INPUT_CXX_STANDARD}" >> "${GITHUB_ENV}"
+          echo "AIS_CONTAINER_NAME=${AIS_PR_NUMBER:=${GITHUB_RUN_ID}}_${GITHUB_JOB}_${AIS_INPUT_PLATFORM}_${AIS_INPUT_ROCM_VERSION}_${AIS_SAFE_COMPILER_NAME}_${AIS_INPUT_CXX_STANDARD}_${AIS_BATCH_DESIGNATOR}" >> "${GITHUB_ENV}"
       - name: Fetching code repository...
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -153,6 +159,7 @@ jobs:
             -e "_AIS_INPUT_ROCM_VERSION=${AIS_INPUT_ROCM_VERSION}" \
             -e "_AIS_SAFE_COMPILER_NAME=${AIS_SAFE_COMPILER_NAME}" \
             -e "_AIS_INPUT_CXX_STANDARD=${AIS_INPUT_CXX_STANDARD}" \
+            -e "_AIS_BATCH_DESIGNATOR=${AIS_BATCH_DESIGNATOR}" \
             -t \
             -w /ais/rocm-systems/projects/hipfile \
             "${AIS_CONTAINER_NAME}" \
@@ -160,11 +167,12 @@ jobs:
               .venv/bin/python -m build --sdist ./python
               shopt -s nullglob
               OLD_FILENAME="$(basename ./python/dist/hipfile-*.tar.gz)"
-              # python_bindings runs for every (platform, rocm, cxx) leg and the
-              # sdist version does not encode any of them, so disambiguate the
-              # artifact (named after the file) across all of them. Sanitized
-              # compiler avoids a "+" being read as a PEP 440 local version.
-              NEW_FILENAME="${OLD_FILENAME%.tar.gz}-${_AIS_INPUT_PLATFORM}-${_AIS_INPUT_ROCM_VERSION}-${_AIS_SAFE_COMPILER_NAME}-cxx${_AIS_INPUT_CXX_STANDARD}.tar.gz"
+              # python_bindings runs for every platform/ROCm/compiler/standard/
+              # batch leg and the sdist version does not encode any of them, so
+              # disambiguate the artifact (named after the file) across all of
+              # them. Sanitized compiler avoids a "+" being read as a PEP 440
+              # local version.
+              NEW_FILENAME="${OLD_FILENAME%.tar.gz}-${_AIS_INPUT_PLATFORM}-${_AIS_INPUT_ROCM_VERSION}-${_AIS_SAFE_COMPILER_NAME}-cxx${_AIS_INPUT_CXX_STANDARD}-${_AIS_BATCH_DESIGNATOR}.tar.gz"
               mv ./python/dist/${OLD_FILENAME} ./python/dist/${NEW_FILENAME}
               echo "HIPFILE_PYTHON_SDIST_FILENAME=${NEW_FILENAME}" >> "${AIS_GITHUB_OUTPUT}"
             '

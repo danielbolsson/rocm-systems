@@ -46,6 +46,12 @@ jobs:
         [
           20
         ]
+      # Batch support is the normal CI configuration. MATRIX_INCLUDE adds one
+      # batch-disabled compatibility leg without fanning it out across axes.
+      HIPFILE_ENABLE_BATCH: >-
+        [
+          true
+        ]
       # Note: If adding distros or ROCm versions, ensure they have been properly excluded.
       SUPPORTED_PLATFORMS: >-
         [
@@ -65,7 +71,8 @@ jobs:
       # combinations can be expressed without abandoning the base cross-product.
       MATRIX_INCLUDE: >-
         [
-          {"supported_platforms": "ubuntu", "rocm_versions": "7.2.2", "cxx_compiler": "amdclang++", "cxx_standard": 23}
+          {"supported_platforms": "ubuntu", "rocm_versions": "7.2.2", "cxx_compiler": "amdclang++", "cxx_standard": 23, "hipfile_enable_batch": true},
+          {"supported_platforms": "ubuntu", "rocm_versions": "nightly", "cxx_compiler": "amdclang++", "cxx_standard": 20, "hipfile_enable_batch": false}
         ]
       # 7.13.0 and nightly are ubuntu-only targets. They live in the base
       # ROCM_VERSIONS axis and are removed from every other distro via
@@ -232,6 +239,7 @@ jobs:
       ci_image_nvidia: ${{ fromJSON(needs.Precheck.outputs.ci_images)[format('{0}-{1}', matrix.supported_platforms, matrix.rocm_versions)].ci_image_nvidia }}
       cxx_compiler: ${{ matrix.cxx_compiler }}
       cxx_standard: ${{ matrix.cxx_standard }}
+      hipfile_enable_batch: ${{ matrix.hipfile_enable_batch }}
       platform: ${{ matrix.supported_platforms }}
       rocm_version: ${{ matrix.rocm_versions }}
 

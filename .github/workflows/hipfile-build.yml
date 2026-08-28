@@ -3,10 +3,12 @@ run-name: Build, test, and analyze hipFile
 
 env:
   AIS_GHA_CMD_FILES_DOCKER_DIR: /root/github
+  AIS_BATCH_DESIGNATOR: ${{ inputs.hipfile_enable_batch && 'batch-on' || 'batch-off' }}
   AIS_INPUT_BUILD_ID: ${{ inputs.build_id }}
   AIS_INPUT_CI_IMAGE: ${{ inputs.ci_image }}
   AIS_INPUT_CXX_COMPILER: ${{ inputs.cxx_compiler }}
   AIS_INPUT_CXX_STANDARD: ${{ inputs.cxx_standard }}
+  AIS_INPUT_HIPFILE_ENABLE_BATCH: ${{ inputs.hipfile_enable_batch && 'ON' || 'OFF' }}
   AIS_INPUT_JOB_DESIGNATOR: ${{ inputs.job_designator }}
   AIS_INPUT_PLATFORM: ${{ inputs.platform }}
   AIS_MOUNT_PATH: /mnt/ais/ext4
@@ -45,6 +47,11 @@ on:
         description: "Allow coverage to be generated"
         required: false
         type: boolean
+      hipfile_enable_batch:
+        default: true
+        description: "Enable hipFile batch support"
+        required: false
+        type: boolean
       job_designator:
         description: "Qualifies the type of job building hipFile"
         required: false
@@ -80,7 +87,7 @@ permissions:
 
 jobs:
   compile_on_AMD:
-    name: compile_on_AMD (${{ inputs.cxx_compiler }} C++${{ inputs.cxx_standard}})
+    name: compile_on_AMD (${{ inputs.cxx_compiler }} C++${{ inputs.cxx_standard}}, ${{ inputs.hipfile_enable_batch && 'batch-on' || 'batch-off' }})
     outputs:
       ais_hipfile_pkg_dev_filename: ${{ steps.pkg-metadata.outputs.AIS_HIPFILE_PKG_DEV_FILENAME }}
       ais_hipfile_pkg_filename: ${{ steps.pkg-metadata.outputs.AIS_HIPFILE_PKG_FILENAME }}
@@ -103,7 +110,7 @@ jobs:
         # We should expect that there are multiple instances of this job with different cxx_compilers.
         # On non-pull_request triggering workflows, AIS_PR_NUMBER may be empty.
         run: |
-          echo "AIS_CONTAINER_NAME=${AIS_PR_NUMBER:=${GITHUB_RUN_ID}}_${GITHUB_JOB}_${AIS_INPUT_PLATFORM}_${AIS_INPUT_ROCM_VERSION}_${AIS_SAFE_COMPILER_NAME}_${AIS_INPUT_CXX_STANDARD}" >> "${GITHUB_ENV}"
+          echo "AIS_CONTAINER_NAME=${AIS_PR_NUMBER:=${GITHUB_RUN_ID}}_${GITHUB_JOB}_${AIS_INPUT_PLATFORM}_${AIS_INPUT_ROCM_VERSION}_${AIS_SAFE_COMPILER_NAME}_${AIS_INPUT_CXX_STANDARD}_${AIS_BATCH_DESIGNATOR}" >> "${GITHUB_ENV}"
       - name: Fetching code repository...
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -149,21 +156,23 @@ jobs:
             -e "_AIS_INPUT_CXX_COMPILER=${AIS_INPUT_CXX_COMPILER}" \
             -e "_AIS_SAFE_COMPILER_NAME=${AIS_SAFE_COMPILER_NAME}" \
             -e "_AIS_INPUT_CXX_STANDARD=${AIS_INPUT_CXX_STANDARD}" \
+            -e "_AIS_INPUT_HIPFILE_ENABLE_BATCH=${AIS_INPUT_HIPFILE_ENABLE_BATCH}" \
             -e "BUILD_ID=${AIS_INPUT_BUILD_ID}" \
             -e "JOB_DESIGNATOR=${AIS_INPUT_JOB_DESIGNATOR}" \
             -t \
             -w /ais/build/hipfile \
             "${AIS_CONTAINER_NAME}" \
             /bin/bash -c '
-              # Embed compiler+standard in the package release so the per-combo
-              # artifacts (named after the package filename) stay unique.
-              _AIS_CXX_TAG="${_AIS_SAFE_COMPILER_NAME}.cxx${_AIS_INPUT_CXX_STANDARD}"
+              # Embed compiler, standard, and batch mode in the package release
+              # so artifacts named after the package filename stay unique.
+              _AIS_CXX_TAG="${_AIS_SAFE_COMPILER_NAME}.cxx${_AIS_INPUT_CXX_STANDARD}.batch${_AIS_INPUT_HIPFILE_ENABLE_BATCH,,}"
               export CPACK_DEBIAN_PACKAGE_RELEASE="${JOB_DESIGNATOR}${SLES_BUILD_ID_PREFIX}${BUILD_ID}.${_AIS_CXX_TAG}~$(source /etc/os-release && echo ${VERSION_ID})"
               export CPACK_RPM_PACKAGE_RELEASE="${JOB_DESIGNATOR}${SLES_BUILD_ID_PREFIX}${BUILD_ID}.${_AIS_CXX_TAG}"
               cmake \
                 -DCMAKE_BUILD_TYPE=Debug \
                 -DCMAKE_CXX_COMPILER="${_AIS_INPUT_CXX_COMPILER}" \
                 -DAIS_CXX_STANDARD="${{ env.AIS_INPUT_CXX_STANDARD }}" \
+                -DHIPFILE_ENABLE_BATCH="${_AIS_INPUT_HIPFILE_ENABLE_BATCH}" \
                 -DCMAKE_CXX_FLAGS="-Werror" \
                 -DCMAKE_HIP_ARCHITECTURES="${{ env.AIS_HIP_ARCHITECTURES }}" \
                 -DCMAKE_HIP_PLATFORM=amd \
@@ -199,6 +208,7 @@ jobs:
         run: |
           docker exec \
             -e "_AIS_INPUT_CXX_COMPILER=${AIS_INPUT_CXX_COMPILER}" \
+            -e "_AIS_INPUT_HIPFILE_ENABLE_BATCH=${AIS_INPUT_HIPFILE_ENABLE_BATCH}" \
             -t \
             -w /ais/build/hipfile-release \
             "${AIS_CONTAINER_NAME}" \
@@ -207,6 +217,7 @@ jobs:
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_CXX_COMPILER="${_AIS_INPUT_CXX_COMPILER}" \
                 -DAIS_CXX_STANDARD="${{ env.AIS_INPUT_CXX_STANDARD }}" \
+                -DHIPFILE_ENABLE_BATCH="${_AIS_INPUT_HIPFILE_ENABLE_BATCH}" \
                 -DCMAKE_CXX_FLAGS="-Werror" \
                 -DCMAKE_HIP_ARCHITECTURES="${{ env.AIS_HIP_ARCHITECTURES }}" \
                 -DCMAKE_HIP_PLATFORM=amd \
@@ -387,7 +398,7 @@ jobs:
         if: ${{ inputs.upload_artifacts }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: hipfile-build-dir-${{ inputs.platform }}-${{ inputs.rocm_version }}-${{ inputs.cxx_compiler }}-cxx${{ inputs.cxx_standard }}
+          name: hipfile-build-dir-${{ inputs.platform }}-${{ inputs.rocm_version }}-${{ inputs.cxx_compiler }}-cxx${{ inputs.cxx_standard }}-${{ inputs.hipfile_enable_batch && 'batch-on' || 'batch-off' }}
           path: ${{ github.workspace }}/hipfile-build-dir
           if-no-files-found: error
           retention-days: 1

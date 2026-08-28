@@ -11,8 +11,8 @@
 #   Sourced (CI):  source ci-matrices.sh
 #                  -> sets shell vars ci_matrix and full_CI_images_matrix from
 #                     the env vars CXX_COMPILER, CXX_STANDARD,
-#                     SUPPORTED_PLATFORMS, ROCM_VERSIONS, MATRIX_INCLUDE,
-#                     MATRIX_EXCLUDE
+#                     HIPFILE_ENABLE_BATCH, SUPPORTED_PLATFORMS, ROCM_VERSIONS,
+#                     MATRIX_INCLUDE, MATRIX_EXCLUDE
 #   Tests:         bash ci-matrices.sh --test
 #
 # Because the same jq is both shipped to CI and exercised by --test, the two
@@ -22,12 +22,14 @@
 
 # Build the full strategy.matrix object handed to the test (Linux) job. GHA
 # expands the cross-product and applies the include/exclude keys itself.
-# Args: cxx_compiler cxx_standard supported_platforms rocm_versions matrix_include matrix_exclude (JSON)
+# Args: cxx_compiler cxx_standard hipfile_enable_batch supported_platforms
+#       rocm_versions matrix_include matrix_exclude (JSON)
 compute_ci_matrix() {
-  local cxx_compiler="$1" cxx_standard="$2" supported_platforms="$3" rocm_versions="$4" matrix_include="$5" matrix_exclude="$6"
+  local cxx_compiler="$1" cxx_standard="$2" hipfile_enable_batch="$3" supported_platforms="$4" rocm_versions="$5" matrix_include="$6" matrix_exclude="$7"
   jq -c --null-input \
     --argjson cxx_compiler "${cxx_compiler}" \
     --argjson cxx_standard "${cxx_standard}" \
+    --argjson hipfile_enable_batch "${hipfile_enable_batch}" \
     --argjson supported_platforms "${supported_platforms}" \
     --argjson rocm_versions "${rocm_versions}" \
     --argjson matrix_include "${matrix_include}" \
@@ -35,6 +37,7 @@ compute_ci_matrix() {
     '{
       cxx_compiler: $cxx_compiler,
       cxx_standard: $cxx_standard,
+      hipfile_enable_batch: $hipfile_enable_batch,
       supported_platforms: $supported_platforms,
       rocm_versions: $rocm_versions,
       include: $matrix_include,
@@ -122,24 +125,27 @@ _assert_eq() {
 _run_tests() {
   local failures=0 ci out
 
-  echo "Test 0: compute_ci_matrix emits every axis (incl. cxx_compiler/cxx_standard)"
+  echo "Test 0: compute_ci_matrix emits every axis (incl. compiler/standard/batch)"
   # Guards against silently dropping an axis from the jq object: a missing
-  # cxx_compiler/cxx_standard here means matrix.cxx_* resolves empty in GHA.
+  # compiler/standard/batch field here means the corresponding matrix value
+  # resolves empty in GHA.
   out=$(compute_ci_matrix \
     '["amdclang++","clang++","g++"]' \
     '[17,20]' \
+    '[true]' \
     '["rocky8","ubuntu"]' \
     '["7.2.2"]' \
-    '[{"supported_platforms":"ubuntu","rocm_versions":"7.13.0","cxx_compiler":"amdclang++","cxx_standard":17}]' \
+    '[{"supported_platforms":"ubuntu","rocm_versions":"7.13.0","cxx_compiler":"amdclang++","cxx_standard":17,"hipfile_enable_batch":false}]' \
     '[{"supported_platforms":"rocky8","cxx_standard":20}]')
   local ci_matrix_actual ci_matrix_expected
   ci_matrix_actual=$(printf '%s' "${out}" | jq -cS .)
   ci_matrix_expected=$(printf '%s' '{
     "cxx_compiler":["amdclang++","clang++","g++"],
     "cxx_standard":[17,20],
+    "hipfile_enable_batch":[true],
     "supported_platforms":["rocky8","ubuntu"],
     "rocm_versions":["7.2.2"],
-    "include":[{"supported_platforms":"ubuntu","rocm_versions":"7.13.0","cxx_compiler":"amdclang++","cxx_standard":17}],
+    "include":[{"supported_platforms":"ubuntu","rocm_versions":"7.13.0","cxx_compiler":"amdclang++","cxx_standard":17,"hipfile_enable_batch":false}],
     "exclude":[{"supported_platforms":"rocky8","cxx_standard":20}]
   }' | jq -cS .)
   if [ "${ci_matrix_actual}" = "${ci_matrix_expected}" ]; then
@@ -263,6 +269,13 @@ _run_tests() {
     '{"include":[{"supported_platforms":"rocky","rocm_versions":"7.2.2"},{"supported_platforms":"rocky8","rocm_versions":"7.2.2"},{"supported_platforms":"suse","rocm_versions":"7.2.2"},{"supported_platforms":"ubuntu","rocm_versions":"7.2.2"},{"supported_platforms":"ubuntu","rocm_versions":"7.13.0"},{"supported_platforms":"ubuntu","rocm_versions":"nightly"}]}' || failures=$((failures+1))
 
   echo
+  echo "Test 15: batch-disabled nightly leg reuses the batch-enabled nightly image"
+  ci='{"cxx_compiler":["amdclang++"],"cxx_standard":[20],"hipfile_enable_batch":[true],"supported_platforms":["ubuntu"],"rocm_versions":["nightly"],"include":[{"cxx_compiler":"amdclang++","cxx_standard":20,"hipfile_enable_batch":false,"supported_platforms":"ubuntu","rocm_versions":"nightly"}],"exclude":[]}'
+  out=$(compute_full_CI_images_matrix "$ci")
+  _assert_eq "  output" "$out" \
+    '{"include":[{"supported_platforms":"ubuntu","rocm_versions":"nightly"}]}' || failures=$((failures+1))
+
+  echo
   if [ "${failures}" -eq 0 ]; then
     echo "All tests passed."
   else
@@ -279,7 +292,7 @@ if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
   # SC2034: ci_matrix/full_CI_images_matrix are consumed by the sourcing CI step.
   # SC2153: the UPPER_CASE names are CI env vars, not typos of the lowercase args.
   # shellcheck disable=SC2034,SC2153
-  ci_matrix=$(compute_ci_matrix "${CXX_COMPILER}" "${CXX_STANDARD}" "${SUPPORTED_PLATFORMS}" "${ROCM_VERSIONS}" "${MATRIX_INCLUDE}" "${MATRIX_EXCLUDE}")
+  ci_matrix=$(compute_ci_matrix "${CXX_COMPILER}" "${CXX_STANDARD}" "${HIPFILE_ENABLE_BATCH}" "${SUPPORTED_PLATFORMS}" "${ROCM_VERSIONS}" "${MATRIX_INCLUDE}" "${MATRIX_EXCLUDE}")
   # shellcheck disable=SC2034
   full_CI_images_matrix=$(compute_full_CI_images_matrix "${ci_matrix}")
 else

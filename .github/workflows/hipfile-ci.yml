@@ -20,6 +20,11 @@ on:
         description: "C++ standard to use for building"
         required: true
         type: number
+      hipfile_enable_batch:
+        default: true
+        description: "Enable hipFile batch support"
+        required: false
+        type: boolean
       platform:
         required: true
         type: string
@@ -40,6 +45,7 @@ jobs:
       cxx_compiler: ${{ inputs.cxx_compiler }}
       cxx_standard: ${{ inputs.cxx_standard }}
       generate_coverage: ${{ inputs.cxx_standard == 20 && inputs.cxx_compiler == 'amdclang++' }}
+      hipfile_enable_batch: ${{ inputs.hipfile_enable_batch }}
       platform: ${{ inputs.platform }}
       rocm_version: ${{ inputs.rocm_version }}
       upload_artifacts: true
@@ -53,6 +59,7 @@ jobs:
       ci_image: ${{ needs.build_and_test.outputs.ci_image }}
       cxx_compiler: ${{ inputs.cxx_compiler }}
       cxx_standard: ${{ inputs.cxx_standard }}
+      hipfile_enable_batch: ${{ inputs.hipfile_enable_batch }}
       platform: ${{ inputs.platform }}
       rocm_version: ${{ inputs.rocm_version }}
 
@@ -65,6 +72,7 @@ jobs:
       ci_image: ${{ needs.build_and_test.outputs.ci_image }}
       cxx_compiler: ${{ inputs.cxx_compiler }}
       cxx_standard: ${{ inputs.cxx_standard }}
+      hipfile_enable_batch: ${{ inputs.hipfile_enable_batch }}
       platform: ${{ inputs.platform }}
       rocm_version: ${{ inputs.rocm_version }}
 
