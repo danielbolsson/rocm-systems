@@ -268,7 +268,7 @@ class TestCliMetricPartitionClock(unittest.TestCase):
     def setUpClass(cls):
         if not METRIC_PATH or not os.path.isfile(METRIC_PATH):
             raise unittest.SkipTest(
-                f"amd-smi CLI not found ({METRIC_PATH or _CLI_DIR}): metric.py not present"
+                f"amd-smi CLI metric.py not found (looked in {_CLI_DIR or amdsmi_path})"
             )
         modules = _build_fake_amdsmi()
         stub_modules(cls, modules)
@@ -460,8 +460,10 @@ class TestCliMetricPartitionVirtualOS(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        if not os.path.isfile(METRIC_PATH):
-            raise unittest.SkipTest(f"amd-smi CLI metric.py not found at {METRIC_PATH}")
+        if not METRIC_PATH or not os.path.isfile(METRIC_PATH):
+            raise unittest.SkipTest(
+                f"amd-smi CLI metric.py not found (looked in {_CLI_DIR or amdsmi_path})"
+            )
         modules = _build_fake_amdsmi()
         stub_modules(cls, modules)
         cls.interface = modules["amdsmi.amdsmi_interface"]

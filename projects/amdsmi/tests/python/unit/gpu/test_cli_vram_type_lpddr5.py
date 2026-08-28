@@ -193,7 +193,7 @@ class TestCliVramTypeLpddr5(unittest.TestCase):
     def setUpClass(cls):
         if not STATIC_PATH or not os.path.isfile(STATIC_PATH):
             raise unittest.SkipTest(
-                f"amd-smi CLI not found ({STATIC_PATH or _CLI_DIR}): static.py not present"
+                f"amd-smi CLI static.py not found (looked in {_CLI_DIR or amdsmi_path})"
             )
         # Snapshot any real amdsmi already loaded so the stub does not leak into
         # sibling suites sharing the interpreter; restored in tearDownClass.
