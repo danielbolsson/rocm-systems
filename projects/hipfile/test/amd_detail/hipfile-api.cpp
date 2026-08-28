@@ -60,6 +60,7 @@ struct HipFileUnit : public HipFileUnopened {
     }
 };
 
+#ifdef HIPFILE_ENABLE_BATCH
 TEST_F(HipFileUnit, TestHipFileBatchIOSetupSuccess)
 {
     hipFileBatchHandle_t b_handle          = nullptr;
@@ -143,6 +144,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitNullptrParams)
     hipFileError_t expected_result = {hipFileInvalidValue, hipSuccess};
     ASSERT_EQ(result, expected_result);
 }
+#endif
 
 /// @brief Test hipFileIO function
 struct HipFileIoParam : public TestWithParam<IoType> {

@@ -13,7 +13,6 @@ set(TEST_SOURCE_FILES
     api_trace.cpp
     async.cpp
     backend.cpp
-    batch/batch.cpp
     configuration.cpp
     context.cpp
     buffer.cpp
@@ -32,6 +31,10 @@ set(TEST_SOURCE_FILES
     stream.cpp
     thread-pool.cpp
 )
+
+if(HIPFILE_ENABLE_BATCH)
+    list(APPEND TEST_SOURCE_FILES batch/batch.cpp)
+endif()
 
 set(TEST_SYSINCLS
     ${HIPFILE_AMD_SOURCE_PATH}
@@ -53,6 +56,9 @@ target_link_libraries(internal_tests PRIVATE GTest::gmock)
 target_link_libraries(internal_tests PRIVATE GTest::gtest)
 target_compile_options(internal_tests PRIVATE -pthread)
 target_link_options(internal_tests PRIVATE -pthread)
+if(HIPFILE_ENABLE_BATCH)
+    target_compile_definitions(internal_tests PRIVATE HIPFILE_ENABLE_BATCH)
+endif()
 
 ais_gtest_discover_tests(
     internal_tests
@@ -81,17 +87,19 @@ add_test(
 )
 set_tests_properties(state_mt_test PROPERTIES LABELS "stress;internal")
 
-ais_add_test_executable(
-    NAME batch_mt
-    DEPS hipfile
-    SRCS "batch/batch_mt.cpp"
-    SYSINCLS ${HIPFILE_AMD_SOURCE_PATH} ${HIPFILE_INCLUDE_PATH}
-)
+if(HIPFILE_ENABLE_BATCH)
+    ais_add_test_executable(
+        NAME batch_mt
+        DEPS hipfile
+        SRCS "batch/batch_mt.cpp"
+        SYSINCLS ${HIPFILE_AMD_SOURCE_PATH} ${HIPFILE_INCLUDE_PATH}
+    )
 
-target_link_libraries(batch_mt PRIVATE Threads::Threads)
+    target_link_libraries(batch_mt PRIVATE Threads::Threads)
 
-add_test(
-    NAME batch_mt_test
-    COMMAND gdb --batch --quiet -ex run -ex "thread apply all bt full" --return-child-result --args $<TARGET_FILE:batch_mt>
-)
-set_tests_properties(batch_mt_test PROPERTIES LABELS "stress;internal")
+    add_test(
+        NAME batch_mt_test
+        COMMAND gdb --batch --quiet -ex run -ex "thread apply all bt full" --return-child-result --args $<TARGET_FILE:batch_mt>
+    )
+    set_tests_properties(batch_mt_test PROPERTIES LABELS "stress;internal")
+endif()

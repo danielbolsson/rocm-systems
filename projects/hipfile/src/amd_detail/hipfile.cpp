@@ -389,6 +389,12 @@ hipFileError_t
 hipFileBatchIOSetUp(hipFileBatchHandle_t *batch_idp, unsigned max_nr)
 try {
     hipFileInit();
+#ifndef HIPFILE_ENABLE_BATCH
+    (void)batch_idp;
+    (void)max_nr;
+
+    throw std::runtime_error("Not Implemented");
+#else
     if (batch_idp == nullptr) {
         return {hipFileInvalidValue, hipSuccess};
     }
@@ -396,6 +402,7 @@ try {
     *batch_idp = Context<DriverState>::get()->createBatchContext(max_nr);
 
     return {hipFileSuccess, hipSuccess};
+#endif
 }
 catch (const std::invalid_argument &) {
     return {hipFileInvalidValue, hipSuccess};
@@ -408,6 +415,14 @@ hipFileError_t
 hipFileBatchIOSubmit(hipFileBatchHandle_t batch_idp, unsigned nr, hipFileIOParams_t *iocbp, unsigned flags)
 try {
     hipFileInit();
+#ifndef HIPFILE_ENABLE_BATCH
+    (void)batch_idp;
+    (void)nr;
+    (void)iocbp;
+    (void)flags;
+
+    throw std::runtime_error("Not Implemented");
+#else
     (void)flags; // Unused at this time.
 
     if (iocbp == nullptr && nr > 0) {
@@ -418,6 +433,7 @@ try {
     batch_context->submit_operations(iocbp, nr);
 
     return {hipFileSuccess, hipSuccess};
+#endif
 }
 catch (const std::invalid_argument &) {
     return {hipFileInvalidValue, hipSuccess};

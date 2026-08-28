@@ -184,6 +184,8 @@ include(AISAddLibraries)
 # Options
 #-----------------------------------------------------------------------------
 
+option(HIPFILE_ENABLE_BATCH "Enable batch support" OFF)
+
 #-----------------------------------------------------------------------------
 # Code coverage (via llvm-cov)
 #

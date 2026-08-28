@@ -184,6 +184,7 @@ TEST_F(DriverNoInit, hipFileDriverCloseReturnsNotInitIfDriverNotOpened)
     ASSERT_EQ(hipFileDriverClose(), HipFileOpError(hipFileDriverNotInitialized));
 }
 
+#if defined(__HIP_PLATFORM_NVIDIA__) || defined(HIPFILE_ENABLE_BATCH)
 TEST_F(DriverNoInit, hipFileBatchIOSetUp)
 {
     hipFileBatchHandle_t handle;
@@ -260,6 +261,7 @@ TEST_F(DriverNoInit, hipFileBatchIODestroy)
 
     hipFileBatchIODestroy(handle);
 }
+#endif
 
 TEST_F(DriverNoInit, hipFileGetVersion)
 {

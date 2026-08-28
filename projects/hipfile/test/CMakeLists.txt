@@ -78,6 +78,9 @@ target_link_libraries(hipfile_system_tests PRIVATE GTest::gtest)
 # NEVER REMOVE IT
 target_compile_options(hipfile_system_tests PRIVATE -pthread)
 target_link_options(hipfile_system_tests PRIVATE -pthread)
+if(HIPFILE_ENABLE_BATCH)
+    target_compile_definitions(hipfile_system_tests PRIVATE HIPFILE_ENABLE_BATCH)
+endif()
 
 set(_allow_skip_arg "")
 if(HIPFILE_ALLOW_SKIP_FASTPATH_TESTS)
@@ -100,11 +103,13 @@ ais_add_test_executable(
     SRCS legacy/test-hipfile.cpp
     DEPS hipfile
 )
-ais_add_test_executable(
-    NAME test_hipfile_batch
-    SRCS legacy/test-hipfile-batch.cpp
-    DEPS hipfile
-)
+if(HIPFILE_ENABLE_BATCH OR AIS_BUILD_NVIDIA_DETAIL)
+    ais_add_test_executable(
+        NAME test_hipfile_batch
+        SRCS legacy/test-hipfile-batch.cpp
+        DEPS hipfile
+    )
+endif()
 # ----------------------------------------
 
 # These need setup and command-line options (TBD)

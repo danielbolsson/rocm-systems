@@ -43,6 +43,10 @@ ais_add_libraries(
     SYSINCLS ${HIPFILE_AMD_SOURCE_PATH} ${HIPFILE_THIRD_PARTY_PATH}
 )
 
+if(HIPFILE_ENABLE_BATCH)
+    target_compile_definitions(hipfile PRIVATE HIPFILE_ENABLE_BATCH)
+endif()
+
 # There are some warnings that appear while compiling thread-pool.cpp due
 # to inlining from Taskflow, so we see these warnings even with third-party
 # set as a system include directory. Disable these warnings.
