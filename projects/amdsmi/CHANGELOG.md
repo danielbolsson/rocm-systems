@@ -21,6 +21,10 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
   - For `mclk` and `fclk` ONLY, which expose a discrete DPM table, the requested `max` is now rounded down to the nearest selectable clock level, so the enforced limit never exceeds the requested value.
   - `sclk` supports a continuous frequency range, so its requested `max` is honored exactly (e.g. `600` enforces a limit of 600MHz) and is not snapped.
 
+- **Fixed `amd-smi metric --fan` reporting `0.0 %` on Navi3x/4x GPUs**.  
+  - `amdsmi_get_gpu_fan_speed()` read the gpu_od `fan_minimum_pwm` node, which is a user-set fan curve floor (`0` by default) and not a live reading. Both it and `amdsmi_get_gpu_fan_speed_max()` now read the hwmon `pwm1`/`pwm1_max` duty cycle again.
+  - The range accepted by `amdsmi_set_gpu_fan_speed()` on gpu_od GPUs is the gpu_od `OD_RANGE` and is not derivable from `amdsmi_get_gpu_fan_speed_max()`; `amd-smi set --fan --help` now advertises that range instead of deriving it from the reported maximum.
+
 ### Upcoming Changes
 
 - **UUIDs will be replaced by CUIDs in an upcoming version**.  
