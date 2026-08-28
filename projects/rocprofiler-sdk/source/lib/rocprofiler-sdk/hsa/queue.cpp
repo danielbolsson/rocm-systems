@@ -429,7 +429,8 @@ WriteInterceptor(const void* packets,
         (queue.get_notifiers() == 0 &&
          context::get_active_contexts(full_packet_instrumentation_context_filter).empty());
 
-    if(pkt_count == 0 || (no_real_consumers && !graph_launch_active && !event_api_active))
+    if(pkt_count == 0 || (no_real_consumers && !graph_launch_active && !event_api_active &&
+                          !hip::event::has_pending_waits()))
     {
         writer(packets, pkt_count);
         return;
@@ -460,7 +461,7 @@ WriteInterceptor(const void* packets,
     }
 
     auto* active_event_ctx = hip::event::get_active_event_context();
-    if(num_dispatch_packets == 0 && !active_event_ctx)
+    if(num_dispatch_packets == 0 && !active_event_ctx && !hip::event::has_pending_waits())
     {
         writer(packets, pkt_count);
         return;
